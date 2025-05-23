@@ -1,7 +1,9 @@
 use serde::{Deserialize, Serialize};
 use strum::Display;
 
-#[derive(Debug, Clone, PartialEq, Eq, Display, Serialize, Deserialize)]
+use crate::app::{self};
+
+#[derive(Debug, PartialEq, Eq, Display)]
 pub enum Event {
-    ServerStart,
+    App(app::Event),
 }

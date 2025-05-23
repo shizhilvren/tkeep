@@ -1,1 +1,5 @@
-2025-05-23T07:32:16.110226Z DEBUG src/tserver.rs:16: this is a debug message
+2025-05-23T09:20:00.426306Z DEBUG src/tserver.rs:20: this is a debug message
+2025-05-23T09:20:00.426997Z DEBUG src/app.rs:69: Sent StartTTYIn event
+2025-05-23T09:20:00.427016Z DEBUG src/app.rs:40: Received event: Some(App(StartTTYIn))
+2025-05-23T09:20:00.427024Z DEBUG src/app.rs:55: Received StartTTYIn event
+2025-05-23T09:20:00.427029Z DEBUG src/app.rs:82: Adding component
