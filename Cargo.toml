@@ -1,0 +1,54 @@
+[package]
+name = "tkeep"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "tserver"
+path = "src/tserver.rs"
+
+[dependencies]
+arboard = "3.5.0"
+base64 = "0.22.1"
+better-panic = "0.3.0"
+bytes = "1.9.0"
+clap = { version = "4.5.20", features = [
+    "derive",
+    "cargo",
+    "wrap_help",
+    "unicode",
+    "string",
+    "unstable-styles",
+] }
+color-eyre = "0.6.3"
+config = "0.15.6"
+crossterm = { version = "0.29.0", features = ["serde", "event-stream"] }
+derive_deref = "1.1.1"
+directories = "6.0.0"
+futures = "0.3.31"
+human-panic = "2.0.2"
+json5 = "0.4.1"
+lalrpop-util = { version = "0.22.0", features = ["lexer", "unicode"] }
+lazy_static = "1.5.0"
+libc = "0.2.161"
+portable-pty = "0.9.0"
+pretty_assertions = "1.4.1"
+ratatui = { version = "0.29.0", features = ["serde", "macros"] }
+serde = { version = "1.0.211", features = ["derive"] }
+serde_json = "1.0.132"
+signal-hook = "0.3.17"
+smol = "2.0.2"
+strip-ansi-escapes = "0.2.0"
+strum = { version = "0.27.1", features = ["derive"] }
+syntect = "5.2.0"
+tokio = { version = "1.40.0", features = ["full"] }
+tokio-util = "0.7.12"
+tracing = "0.1.40"
+tracing-error = "0.2.0"
+tracing-subscriber = { version = "0.3.18", features = ["env-filter", "serde"] }
+tui-term = "0.2.0"
+tui-widgets = "0.4.1"
+unicode-segmentation = "1.12.0"
+unicode-width = "0.2.0"
+vt100 = "0.15.2"
+which = "7.0.1"
