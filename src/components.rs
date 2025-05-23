@@ -9,7 +9,9 @@ use crate::{
     event::Event,
 };
 
-pub mod tty;
+pub mod clinetlistener;
+pub mod clinetworker;
+pub mod pty;
 
 /// `Component` is a trait that represents a visual and interactive element of the user interface.
 ///
@@ -19,7 +21,7 @@ pub trait Component {
     fn init(&mut self) -> Result<()> {
         Ok(())
     }
-    
+
     fn register_config_handler(&mut self, config: Config) -> Result<()> {
         let _ = config; // to appease clippy
         Ok(())
@@ -38,13 +40,12 @@ pub trait Component {
         Ok(None)
     }
 
-
-
-    fn handle_events(&mut self, event: Option<Event>) -> Result<Vec<Action>> {
+    fn handle_events(&mut self, event: &Event) -> Result<Vec<Action>> {
         Ok(vec![])
     }
-    fn handle_action(&mut self, action: Action) -> Result<Vec<Event>> {
+
+    fn handle_action(&mut self, action: Action) -> Result<()> {
         let _ = action; // to appease clippy
-        Ok(vec![])
+        Ok(())
     }
 }

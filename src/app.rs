@@ -1,12 +1,10 @@
 use std::collections::HashMap;
 
-use crate::components::tty;
+use crate::components::{self, clinetlistener, clinetworker, pty};
 use crate::{action, components::Component, config::Config, event};
 use color_eyre::Result;
-use ratatui::prelude::Rect;
-use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
-use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use tokio::sync::mpsc::UnboundedSender;
 use tokio::task::JoinHandle;
 use tracing::{debug, error, info};
 
@@ -25,9 +23,10 @@ pub struct App {
 }
 
 use crate::app;
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Event {
-    StartTTYIn,
+    StartPty,
+    StartClinetListener,
 }
 
 impl App {
@@ -47,7 +46,39 @@ impl App {
             let event = self.event_rx.recv().await;
             debug!("Received event: {:?}", event);
             match event {
-                Some(event) => self.handle_events(event).await?,
+                Some(event) => {
+                    if let Some(event) = self.handle_events(event).await? {
+                        let actions = self.components.iter_mut().fold(
+                            vec![],
+                            |mut acc, (id, (_, _, component))| {
+                                let actions = component.handle_events(&event).unwrap_or_default();
+                                acc.extend(actions);
+                                acc
+                            },
+                        );
+
+                        actions.iter().for_each(|action| {
+                            self.components.iter_mut().for_each(
+                                move |(id, (sander, _, component))| {
+                                    let ans: std::result::Result<(), color_eyre::eyre::Error> =
+                                        component.handle_action(action.clone());
+                                    match ans {
+                                        Err(e) => {
+                                            error!("handle_action fail {:?}", e);
+                                        }
+                                        _ => {}
+                                    };
+                                    match sander {
+                                        Some(sander) => {
+                                            sander.send(action.clone());
+                                        }
+                                        _ => {}
+                                    };
+                                },
+                            );
+                        });
+                    }
+                }
                 None => {
                     error!("Failed to receive event");
                     return Err(color_eyre::eyre::eyre!("Failed to receive event"));
@@ -57,14 +88,25 @@ impl App {
         Ok(())
     }
 
-    async fn handle_events(&mut self, event: event::Event) -> Result<()> {
-        match event {
-            event::Event::App(app::Event::StartTTYIn) => {
-                debug!("Received StartTTYIn event");
-                self.add_component(Box::new(tty::TTy::new()))?;
+    async fn handle_events(&mut self, event: event::Event) -> Result<Option<event::Event>> {
+        let next = match event {
+            event::Event::App(app::Event::StartPty) => {
+                debug!("Received StartPty event");
+                self.add_component(Box::new(pty::Pty::new()))?;
+                None
             }
-        }
-        Ok(())
+            event::Event::App(app::Event::StartClinetListener) => {
+                debug!("Received StartClinetListener event");
+                self.add_component(Box::new(clinetlistener::ClinetListener::new()))?;
+                None
+            }
+            event::Event::ClinetListener(clinetlistener::Event::NewClient(stream)) => {
+                self.add_component(Box::new(clinetworker::ClinetWorker::new(stream)))?;
+                None
+            }
+            _ => Some(event),
+        };
+        Ok(next)
     }
 
     fn handle_actions(&mut self, action: action::Action) -> Result<()> {
@@ -73,8 +115,10 @@ impl App {
 
     fn init(&self) -> Result<()> {
         self.event_tx
-            .send(event::Event::App(app::Event::StartTTYIn))?;
-        debug!("Sent StartTTYIn event");
+            .send(event::Event::App(app::Event::StartPty))?;
+        self.event_tx
+            .send(event::Event::App(app::Event::StartClinetListener))?;
+        debug!("Sent StartPty event");
         Ok(())
     }
 

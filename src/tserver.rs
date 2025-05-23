@@ -10,6 +10,9 @@ mod app;
 mod action;
 mod event;
 mod components;
+mod tool;
+mod message;
+
 
 #[tokio::main(flavor = "current_thread")]
 
