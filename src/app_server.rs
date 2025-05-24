@@ -2,9 +2,10 @@ use std::collections::HashMap;
 
 use crate::components::{
     self,
-    client::server_worker,
-    server::{client_listener, client_worker, pty},
+    server::{client_listener, pty, worker},
 };
+use crate::event::Event::Server as s_event_e;
+use crate::event::server::Event as s_event;
 use crate::{action, components::Component, config::Config, event};
 use color_eyre::Result;
 use tokio::sync::mpsc;
@@ -62,6 +63,7 @@ impl AppServer {
                         );
 
                         actions.iter().for_each(|action| {
+                            debug!("Received action {:?}", action);
                             self.components.iter_mut().for_each(
                                 move |(id, (sander, _, component))| {
                                     let ans: std::result::Result<(), color_eyre::eyre::Error> =
@@ -94,18 +96,18 @@ impl AppServer {
 
     async fn handle_events(&mut self, event: event::Event) -> Result<Option<event::Event>> {
         let next = match event {
-            event::Event::App(app_server::Event::StartPty) => {
+            s_event_e(s_event::App(app_server::Event::StartPty)) => {
                 debug!("Received StartPty event");
                 self.add_component(Box::new(pty::Pty::new()))?;
                 None
             }
-            event::Event::App(app_server::Event::StartClinetListener) => {
+            s_event_e(s_event::App(app_server::Event::StartClinetListener)) => {
                 debug!("Received StartClinetListener event");
                 self.add_component(Box::new(client_listener::ClinetListener::new()))?;
                 None
             }
-            event::Event::ClinetListener(client_listener::Event::NewClient(stream)) => {
-                self.add_component(Box::new(client_worker::ClinetWorker::new(stream)))?;
+            s_event_e(s_event::ClinetListener(client_listener::Event::NewClient(stream))) => {
+                self.add_component(Box::new(worker::Worker::new(stream)))?;
                 None
             }
 
@@ -120,9 +122,10 @@ impl AppServer {
 
     fn init(&self) -> Result<()> {
         self.event_tx
-            .send(event::Event::App(app_server::Event::StartPty))?;
-        self.event_tx
-            .send(event::Event::App(app_server::Event::StartClinetListener))?;
+            .send(s_event_e(s_event::App(app_server::Event::StartPty)))?;
+        self.event_tx.send(s_event_e(s_event::App(
+            app_server::Event::StartClinetListener,
+        )))?;
         debug!("Sent StartPty event");
         Ok(())
     }

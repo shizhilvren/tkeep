@@ -1,5 +1,7 @@
 use super::super::Component;
 use super::pty::{self, Pty};
+use crate::event::Event::Server as s_event_e;
+use crate::event::server::Event as s_event;
 use crate::message::Msg;
 use crate::{action, event, tool};
 use bincode::{Decode, Encode};
@@ -19,15 +21,15 @@ pub enum Action {}
 pub enum Event {}
 
 #[derive(Debug, Default)]
-pub struct ClinetWorker {
+pub struct Worker {
     event_tx: Option<UnboundedSender<event::Event>>,
     action_rx: Option<UnboundedReceiver<action::Action>>,
     client_uds: Option<UnixStream>,
 }
 
-impl ClinetWorker {
+impl Worker {
     pub fn new(uds: UnixStream) -> Self {
-        ClinetWorker {
+        Worker {
             event_tx: None,
             action_rx: None,
             client_uds: Some(uds),
@@ -46,7 +48,7 @@ impl ClinetWorker {
                     match action {
                         Some(action) => {
                             // Handle the action here
-                            debug!("Received action: {:?}", action);
+                            // debug!("Received action: {:?}", action);
                         }
                         None => {
                             error!("Failed to receive action");
@@ -57,7 +59,7 @@ impl ClinetWorker {
                 data = tool::unix_socket::receive_message::<Msg>(&mut uds) => {
                     match data? {
                         Msg::PtyIn(data) => {
-                            event_tx.send(event::Event::Pty(pty::Event::PtyIn(data)))?;
+                            event_tx.send(s_event_e(s_event::Pty(pty::Event::PtyIn(data))))?;
                         }
                         _ => {}
                     }
@@ -68,7 +70,7 @@ impl ClinetWorker {
     }
 }
 
-impl Component for ClinetWorker {
+impl Component for Worker {
     fn register_action_handler(&mut self) -> Result<Option<UnboundedSender<action::Action>>> {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
         self.action_rx = Some(rx);

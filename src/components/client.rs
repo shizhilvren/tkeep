@@ -1,1 +1,2 @@
-pub mod server_worker;
+pub mod worker;
+pub mod input;

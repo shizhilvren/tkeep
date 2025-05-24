@@ -1,4 +1,9 @@
 use super::super::Component;
+use crate::action::Action::Server as s_action_e;
+use crate::action::server::Action as s_action;
+use crate::event::Event::Server as s_event_e;
+use crate::event::server::Event as s_event;
+use crate::tool;
 use crate::{action, event};
 use color_eyre::{Result, eyre::eyre};
 use portable_pty::{Child, CommandBuilder, PtySize, native_pty_system};
@@ -39,12 +44,11 @@ impl Pty {
     ) -> Result<()> {
         match action {
             Some(action) => match action {
-                action::Action::Pty(self::Action::PtyIn(data)) => {
+                s_action_e(s_action::Pty(self::Action::PtyIn(data))) => {
                     if let Err(e) = tty_in.write_all(&data) {
                         error!("Failed to write to pty: {}", e);
                         return Err(eyre!("Failed to write to pty"));
                     } else {
-                        debug!("pty writee data: {:?}", from_utf8(&data));
                     }
                 }
                 _ => {}
@@ -68,8 +72,7 @@ impl Pty {
                     return Err(eyre!("pty read 0 bytes"));
                 }
                 let data = buf[..n].to_vec();
-                debug!("pty read data: {:?}", from_utf8(&data));
-                event_tx.send(event::Event::Pty(Event::PtyOut(data)))?;
+                event_tx.send(s_event_e(s_event::Pty(Event::PtyOut(data))))?;
             }
             Err(e) => {
                 error!("Failed to read from pty: {}", e);
@@ -130,8 +133,7 @@ impl Pty {
             .take_writer()
             .map_err(|e| eyre!(format!("{:?}", e)))?;
 
-        const BUF_SIZE: usize = 4096;
-        let mut buf = [0_u8; BUF_SIZE];
+        let mut buf = [0_u8; tool::BUF_SIZE];
         loop {
             tokio::select! {
                 action = action_rx.recv() => {
@@ -171,8 +173,8 @@ impl Component for Pty {
     fn handle_events(&mut self, event: &event::Event) -> Result<Vec<action::Action>> {
         let mut ret = vec![];
         match event {
-            event::Event::Pty(self::Event::PtyIn(data)) => {
-                ret.push(action::Action::Pty(Action::PtyIn(data.clone())));
+            s_event_e(s_event::Pty(self::Event::PtyIn(data))) => {
+                ret.push(s_action_e(s_action::Pty(Action::PtyIn(data.clone()))));
             }
             _ => {}
         };

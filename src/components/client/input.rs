@@ -1,40 +1,58 @@
 use super::super::Component;
-use crate::{action, event};
+use crate::action::Action::Clinet as c_action_e;
+use crate::action::client::Action as c_action;
+use crate::event::Event::Client as c_event_e;
+use crate::event::client::Event as c_event;
+use crate::{action, event, tool};
 use color_eyre::{Result, eyre::eyre};
 use serde::{Deserialize, Serialize};
 use strum::Display;
+use tokio::io::AsyncReadExt;
 use tokio::net::UnixStream;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use tracing::error;
 
 #[derive(Debug, Clone, PartialEq, Eq, Display, Serialize, Deserialize)]
 pub enum Action {}
 
 #[derive(Debug, Clone, PartialEq, Eq, Display, Serialize, Deserialize)]
 pub enum Event {
-    StartClientPlayer,
+    Start,
+    PtyIn(Vec<u8>),
 }
 
 #[derive(Debug, Default)]
-pub struct ClientCommunication {
+pub struct Input {
     event_tx: Option<UnboundedSender<event::Event>>,
     action_rx: Option<UnboundedReceiver<action::Action>>,
 }
 
-impl ClientCommunication {
+impl Input {
     pub fn new() -> Self {
-        ClientCommunication::default()
+        Input::default()
     }
-    async fn start_player(
+    async fn start_input_loop(
         mut event_tx: UnboundedSender<event::Event>,
         mut action_rx: UnboundedReceiver<action::Action>,
     ) -> Result<()> {
-        let mut stream = UnixStream::connect("/tmp/stream.sock").await?;
-        
+        match crossterm::terminal::enable_raw_mode() {
+            Ok(()) => {
+                let mut tty = tokio::fs::File::open("/dev/tty").await?;
+                let mut buf = [0_u8; tool::BUF_SIZE];
+                loop {
+                    let n = tty.read(&mut buf).await?;
+                    event_tx.send(c_event_e(c_event::Input(Event::PtyIn(buf[..n].to_vec()))))?;
+                }
+            }
+            Err(e) => {
+                error!("tty not change to raw model {:?}", e);
+            }
+        }
         Ok(())
     }
 }
 
-impl Component for ClientCommunication {
+impl Component for Input {
     fn register_action_handler(&mut self) -> Result<Option<UnboundedSender<action::Action>>> {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
         self.action_rx = Some(rx);
@@ -49,7 +67,7 @@ impl Component for ClientCommunication {
         let action_tx = self.action_rx.take();
         match (event_rx, action_tx) {
             (Some(event_rx), Some(action_tx)) => {
-                let task = Self::start_player(event_rx, action_tx);
+                let task = Self::start_input_loop(event_rx, action_tx);
                 let handle = tokio::spawn(task);
                 Ok(Some(handle))
             }

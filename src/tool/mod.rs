@@ -1,10 +1,18 @@
+pub const BUF_SIZE: usize = 4096;
+
 pub mod unix_socket {
     use bincode::{self, Decode, Encode};
     use color_eyre::{Result, eyre::eyre};
+    use std::fmt::Debug;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::UnixStream;
+    use tracing::debug;
 
-    pub async fn send_message<T: Encode>(stream: &mut UnixStream, msg: &T) -> Result<()> {
+    pub async fn send_message<T>(stream: &mut UnixStream, msg: &T) -> Result<()>
+    where
+        T: Encode + Debug,
+    {
+        debug!("send message {:?}", msg);
         // 序列化数据
         let data = bincode::encode_to_vec(msg, bincode::config::standard())?;
 
@@ -18,7 +26,10 @@ pub mod unix_socket {
         Ok(())
     }
 
-    pub async fn receive_message<T: Decode<()>>(stream: &mut UnixStream) -> Result<T> {
+    pub async fn receive_message<T>(stream: &mut UnixStream) -> Result<T>
+    where
+        T: Decode<()> + Debug,
+    {
         // 读取长度前缀
         let mut len_buf = [0u8; size_of::<u64>()];
         stream.read_exact(&mut len_buf).await?;
@@ -31,6 +42,7 @@ pub mod unix_socket {
         // 反序列化数据
         let msg: (T, usize) =
             bincode::decode_from_slice(&data_buf.as_mut_slice(), bincode::config::standard())?;
+        debug!("Received message {:?}", msg);
         match msg.1 == len {
             true => {}
             false => {

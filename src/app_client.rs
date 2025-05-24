@@ -1,9 +1,15 @@
 use std::collections::HashMap;
 
 use crate::action;
+use crate::action::Action::Clinet as c_action_e;
+use crate::action::client::Action as c_action;
 use crate::components::Component;
+use crate::components::client::input;
+use crate::components::client::worker;
 use crate::config;
 use crate::event;
+use crate::event::Event::Client as c_event_e;
+use crate::event::client::Event as c_event;
 use color_eyre::Result;
 use config::Config;
 use tokio::sync::mpsc;
@@ -60,6 +66,7 @@ impl AppClient {
                         );
 
                         actions.iter().for_each(|action| {
+                            debug!("Received action {:?}", action);
                             self.components.iter_mut().for_each(
                                 move |(id, (sander, _, component))| {
                                     let ans: std::result::Result<(), color_eyre::eyre::Error> =
@@ -92,6 +99,14 @@ impl AppClient {
 
     async fn handle_events(&mut self, event: event::Event) -> Result<Option<event::Event>> {
         let next = match event {
+            c_event_e(c_event::Input(input::Event::Start)) => {
+                self.add_component(Box::new(input::Input::new()))?;
+                None
+            }
+            c_event_e(c_event::Worker(worker::Event::Start)) => {
+                self.add_component(Box::new(worker::Worker::new()))?;
+                None
+            }
             _ => Some(event),
         };
         Ok(next)
@@ -102,7 +117,11 @@ impl AppClient {
     }
 
     fn init(&self) -> Result<()> {
-        debug!("Sent StartPty event");
+        debug!("start client");
+        self.event_tx
+            .send(c_event_e(c_event::Worker(worker::Event::Start)))?;
+        self.event_tx
+            .send(c_event_e(c_event::Input(input::Event::Start)))?;
         Ok(())
     }
 

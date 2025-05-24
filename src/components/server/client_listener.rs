@@ -1,4 +1,8 @@
 use super::super::Component;
+use crate::action::Action::Server as s_action_e;
+use crate::action::server::Action as s_action;
+use crate::event::Event::Server as s_event_e;
+use crate::event::server::Event as s_event;
 use crate::{action, event};
 use bincode::{Decode, Encode};
 use bytes::buf;
@@ -39,7 +43,7 @@ impl ClinetListener {
         let listener = UnixListener::bind(path)?;
         loop {
             let (mut stream, addr) = listener.accept().await?;
-            event_tx.send(event::Event::ClinetListener(Event::NewClient(stream)))?;
+            event_tx.send(s_event_e(s_event::ClinetListener(Event::NewClient(stream))))?;
             debug!("New client connected: {:?}", addr);
         }
     }

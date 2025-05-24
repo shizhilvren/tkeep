@@ -1,12 +1,12 @@
 use color_eyre::Result;
 use tracing_error::ErrorLayer;
-use tracing_subscriber::{fmt, prelude::*, EnvFilter};
+use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 
 use crate::config;
 
 lazy_static::lazy_static! {
     pub static ref LOG_ENV: String = format!("{}_LOG_LEVEL", config::PROJECT_NAME.clone());
-    pub static ref LOG_FILE: String = format!("{}.log", env!("CARGO_PKG_NAME"));
+    pub static ref LOG_FILE: String = format!("{}_{}.log", env!("CARGO_PKG_NAME"), env!("CARGO_BIN_NAME"));
 }
 
 pub fn init() -> Result<()> {
