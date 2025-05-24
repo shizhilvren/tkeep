@@ -1,7 +1,5 @@
-use super::Component;
-use crate::components::pty;
+use super::super::Component;
 use crate::{action, event};
-use bytes::buf;
 use color_eyre::{Result, eyre::eyre};
 use portable_pty::{Child, CommandBuilder, PtySize, native_pty_system};
 use serde::{Deserialize, Serialize};
@@ -41,7 +39,7 @@ impl Pty {
     ) -> Result<()> {
         match action {
             Some(action) => match action {
-                action::Action::Pty(pty::Action::PtyIn(data)) => {
+                action::Action::Pty(self::Action::PtyIn(data)) => {
                     if let Err(e) = tty_in.write_all(&data) {
                         error!("Failed to write to pty: {}", e);
                         return Err(eyre!("Failed to write to pty"));
@@ -173,7 +171,7 @@ impl Component for Pty {
     fn handle_events(&mut self, event: &event::Event) -> Result<Vec<action::Action>> {
         let mut ret = vec![];
         match event {
-            event::Event::Pty(pty::Event::PtyIn(data)) => {
+            event::Event::Pty(self::Event::PtyIn(data)) => {
                 ret.push(action::Action::Pty(Action::PtyIn(data.clone())));
             }
             _ => {}

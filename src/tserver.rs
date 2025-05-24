@@ -6,7 +6,8 @@ use tracing::debug;
 mod config;
 mod errors;
 mod logging;
-mod app;
+mod app_server;
+mod app_client;
 mod action;
 mod event;
 mod components;
@@ -21,7 +22,7 @@ async fn main() -> Result<()> {
     crate::logging::init()?;
     println!("Hello, world!");
     debug!("this is a debug message");
-    let mut app = crate::app::App::new()?;
+    let mut app = crate::app_server::AppServer::new()?;
     app.run().await?;
     Ok(())
 }

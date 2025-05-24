@@ -1,4 +1,4 @@
-use super::Component;
+use super::super::Component;
 use super::pty::{self, Pty};
 use crate::message::Msg;
 use crate::{action, event, tool};
@@ -42,7 +42,7 @@ impl ClinetWorker {
         let event_tx = event_tx;
         loop {
             select! {
-                action = action_rx.recv() =>{
+                action = action_rx.recv() => {
                     match action {
                         Some(action) => {
                             // Handle the action here
@@ -54,7 +54,7 @@ impl ClinetWorker {
                         }
                     }
                 },
-                data = tool::unix_socket::receive_message::<Msg>(&mut uds) =>{
+                data = tool::unix_socket::receive_message::<Msg>(&mut uds) => {
                     match data? {
                         Msg::PtyIn(data) => {
                             event_tx.send(event::Event::Pty(pty::Event::PtyIn(data)))?;

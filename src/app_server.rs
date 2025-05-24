@@ -1,6 +1,10 @@
 use std::collections::HashMap;
 
-use crate::components::{self, clinetlistener, clinetworker, pty};
+use crate::components::{
+    self,
+    client::server_worker,
+    server::{client_listener, client_worker, pty},
+};
 use crate::{action, components::Component, config::Config, event};
 use color_eyre::Result;
 use tokio::sync::mpsc;
@@ -8,7 +12,7 @@ use tokio::sync::mpsc::UnboundedSender;
 use tokio::task::JoinHandle;
 use tracing::{debug, error, info};
 
-pub struct App {
+pub struct AppServer {
     config: Config,
     components: HashMap<
         u32,
@@ -22,14 +26,14 @@ pub struct App {
     event_rx: mpsc::UnboundedReceiver<event::Event>,
 }
 
-use crate::app;
+use crate::app_server;
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Event {
     StartPty,
     StartClinetListener,
 }
 
-impl App {
+impl AppServer {
     pub fn new() -> Result<Self> {
         let (event_tx, event_rx) = mpsc::unbounded_channel();
         Ok(Self {
@@ -90,20 +94,21 @@ impl App {
 
     async fn handle_events(&mut self, event: event::Event) -> Result<Option<event::Event>> {
         let next = match event {
-            event::Event::App(app::Event::StartPty) => {
+            event::Event::App(app_server::Event::StartPty) => {
                 debug!("Received StartPty event");
                 self.add_component(Box::new(pty::Pty::new()))?;
                 None
             }
-            event::Event::App(app::Event::StartClinetListener) => {
+            event::Event::App(app_server::Event::StartClinetListener) => {
                 debug!("Received StartClinetListener event");
-                self.add_component(Box::new(clinetlistener::ClinetListener::new()))?;
+                self.add_component(Box::new(client_listener::ClinetListener::new()))?;
                 None
             }
-            event::Event::ClinetListener(clinetlistener::Event::NewClient(stream)) => {
-                self.add_component(Box::new(clinetworker::ClinetWorker::new(stream)))?;
+            event::Event::ClinetListener(client_listener::Event::NewClient(stream)) => {
+                self.add_component(Box::new(client_worker::ClinetWorker::new(stream)))?;
                 None
             }
+
             _ => Some(event),
         };
         Ok(next)
@@ -115,9 +120,9 @@ impl App {
 
     fn init(&self) -> Result<()> {
         self.event_tx
-            .send(event::Event::App(app::Event::StartPty))?;
+            .send(event::Event::App(app_server::Event::StartPty))?;
         self.event_tx
-            .send(event::Event::App(app::Event::StartClinetListener))?;
+            .send(event::Event::App(app_server::Event::StartClinetListener))?;
         debug!("Sent StartPty event");
         Ok(())
     }

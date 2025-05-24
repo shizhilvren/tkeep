@@ -9,9 +9,8 @@ use crate::{
     event::Event,
 };
 
-pub mod clinetlistener;
-pub mod clinetworker;
-pub mod pty;
+pub mod server;
+pub mod client;
 
 /// `Component` is a trait that represents a visual and interactive element of the user interface.
 ///

@@ -1,51 +1,40 @@
-use super::Component;
+use super::super::Component;
 use crate::{action, event};
-use bincode::{Decode, Encode};
-use bytes::buf;
 use color_eyre::{Result, eyre::eyre};
-use std::str::from_utf8;
-use std::{option::Option, str::FromStr};
+use serde::{Deserialize, Serialize};
 use strum::Display;
-use tokio::io::AsyncReadExt;
-use tokio::net::{UnixListener, UnixStream};
+use tokio::net::UnixStream;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
-use tracing::{debug, error};
 
-#[derive(Debug, Clone, PartialEq, Eq, Display, Encode, Decode)]
+#[derive(Debug, Clone, PartialEq, Eq, Display, Serialize, Deserialize)]
 pub enum Action {}
-#[derive(Debug, Display)]
+
+#[derive(Debug, Clone, PartialEq, Eq, Display, Serialize, Deserialize)]
 pub enum Event {
-    NewClient(UnixStream),
+    StartClientPlayer,
 }
 
 #[derive(Debug, Default)]
-pub struct ClinetListener {
+pub struct ClientCommunication {
     event_tx: Option<UnboundedSender<event::Event>>,
     action_rx: Option<UnboundedReceiver<action::Action>>,
 }
 
-impl ClinetListener {
+impl ClientCommunication {
     pub fn new() -> Self {
-        ClinetListener::default()
+        ClientCommunication::default()
     }
-    async fn start_listen(
-        event_tx: UnboundedSender<event::Event>,
-        action_rx: UnboundedReceiver<action::Action>,
+    async fn start_player(
+        mut event_tx: UnboundedSender<event::Event>,
+        mut action_rx: UnboundedReceiver<action::Action>,
     ) -> Result<()> {
-        let mut action_rx = action_rx;
-        let event_tx = event_tx;
-        let path = "/tmp/stream.sock";
-        let _ = std::fs::remove_file(path);
-        let listener = UnixListener::bind(path)?;
-        loop {
-            let (mut stream, addr) = listener.accept().await?;
-            event_tx.send(event::Event::ClinetListener(Event::NewClient(stream)))?;
-            debug!("New client connected: {:?}", addr);
-        }
+        let mut stream = UnixStream::connect("/tmp/stream.sock").await?;
+        
+        Ok(())
     }
 }
 
-impl Component for ClinetListener {
+impl Component for ClientCommunication {
     fn register_action_handler(&mut self) -> Result<Option<UnboundedSender<action::Action>>> {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
         self.action_rx = Some(rx);
@@ -60,11 +49,15 @@ impl Component for ClinetListener {
         let action_tx = self.action_rx.take();
         match (event_rx, action_tx) {
             (Some(event_rx), Some(action_tx)) => {
-                let task = Self::start_listen(event_rx, action_tx);
+                let task = Self::start_player(event_rx, action_tx);
                 let handle = tokio::spawn(task);
                 Ok(Some(handle))
             }
             _ => Err(eyre!("Failed to get event or action channel")),
         }
+    }
+    fn handle_events(&mut self, event: &event::Event) -> Result<Vec<action::Action>> {
+        let mut ret = vec![];
+        Ok(ret)
     }
 }
