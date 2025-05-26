@@ -1,4 +1,4 @@
-pub const BUF_SIZE: usize = 4096;
+pub const BUF_SIZE: usize = 16;
 
 pub mod unix_socket {
     use bincode::{self, Decode, Encode};

@@ -2,6 +2,7 @@ use super::super::Component;
 use super::input;
 use crate::action::Action::Clinet as c_action_e;
 use crate::action::client::Action as c_action;
+use crate::components::client::output;
 use crate::event::Event::Client as c_event_e;
 use crate::event::client::Event as c_event;
 use crate::message::Msg;
@@ -10,6 +11,7 @@ use color_eyre::{Result, eyre::eyre};
 use serde::{Deserialize, Serialize};
 use strum::Display;
 use tokio::net::UnixStream;
+use tokio::select;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tracing::{debug, error};
 
@@ -37,15 +39,32 @@ impl Worker {
         mut event_tx: UnboundedSender<event::Event>,
         mut action_rx: UnboundedReceiver<action::Action>,
     ) -> Result<()> {
-        let mut stream = UnixStream::connect("/tmp/stream.sock").await?;
-        loop {
-            let action = action_rx.recv().await.ok_or(eyre!("recv action fail"))?;
-            match action {
-                c_action_e(c_action::Worker(self::Action::PtyIn(data))) => {
-                    let msg = Msg::PtyIn(data);
-                    tool::unix_socket::send_message(&mut stream, &msg).await?;
+        let handle_action =
+            async |action: Option<action::Action>, uds: &mut UnixStream| -> Result<()> {
+                let action = action.ok_or(eyre!("Action is None"))?;
+                match action {
+                    c_action_e(c_action::Worker(self::Action::PtyIn(data))) => {
+                        let msg = Msg::PtyIn(data);
+                        tool::unix_socket::send_message(uds, &msg).await?;
+                    }
+                    _ => {}
                 }
-                _ => {}
+                Ok(())
+            };
+        let mut uds = UnixStream::connect("/tmp/stream.sock").await?;
+        loop {
+            select! {
+                action = action_rx.recv() => {
+                    handle_action(action,&mut uds).await?;
+                },
+                data = tool::unix_socket::receive_message::<Msg>(&mut uds) => {
+                    match data? {
+                        Msg::PtyOut(data) => {
+                            event_tx.send(c_event_e(c_event::Output(output::Event::PtyOut(data))))?;
+                        }
+                        _ => {}
+                    }
+                }
             }
         }
         Ok(())

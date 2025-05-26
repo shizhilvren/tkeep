@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use crate::action;
 use crate::action::Action::Clinet as c_action_e;
 use crate::action::client::Action as c_action;
+use crate::components::client::output;
 use crate::components::Component;
 use crate::components::client::input;
 use crate::components::client::worker;
@@ -68,19 +69,15 @@ impl AppClient {
                         actions.iter().for_each(|action| {
                             debug!("Received action {:?}", action);
                             self.components.iter_mut().for_each(
-                                move |(id, (sander, _, component))| {
-                                    let ans: std::result::Result<(), color_eyre::eyre::Error> =
-                                        component.handle_action(action.clone());
-                                    match ans {
-                                        Err(e) => {
-                                            error!("handle_action fail {:?}", e);
-                                        }
-                                        _ => {}
-                                    };
-                                    match sander {
-                                        Some(sander) => {
-                                            sander.send(action.clone());
-                                        }
+                                 |(id, (sander, _, component))| {
+                                    match (sander, component.action_filter(action)) {
+                                        (Some(sander), true) => match sander.send(action.clone()) {
+                                            Err(e) => error!(
+                                                "Failed to send action {:?} to component {}: {}",
+                                                action, id, e
+                                            ),
+                                            _ => {}
+                                        },
                                         _ => {}
                                     };
                                 },
@@ -101,6 +98,7 @@ impl AppClient {
         let next = match event {
             c_event_e(c_event::Input(input::Event::Start)) => {
                 self.add_component(Box::new(input::Input::new()))?;
+                self.add_component(Box::new(output::Output::new()))?;
                 None
             }
             c_event_e(c_event::Worker(worker::Event::Start)) => {

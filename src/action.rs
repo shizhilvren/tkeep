@@ -7,7 +7,7 @@ pub enum Action {
 }
 
 pub mod server {
-    use crate::components::server::{pty, pty_buffer};
+    use crate::components::server::{pty, pty_buffer, worker};
     use serde::{Deserialize, Serialize};
     use strum::Display;
 
@@ -16,6 +16,7 @@ pub mod server {
         ServerStart,
         Pty(pty::Action),
         PtyBuffer(pty_buffer::Action),
+        Worker(worker::Action),
     }
 }
 

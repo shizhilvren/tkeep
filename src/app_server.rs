@@ -6,7 +6,12 @@ use crate::components::{
 };
 use crate::event::Event::Server as s_event_e;
 use crate::event::server::Event as s_event;
-use crate::{action, components::Component, config::Config, event};
+use crate::{
+    action,
+    components::{Component, PID},
+    config::Config,
+    event,
+};
 use color_eyre::Result;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::UnboundedSender;
@@ -16,7 +21,7 @@ use tracing::{debug, error, info};
 pub struct AppServer {
     config: Config,
     components: HashMap<
-        u32,
+        PID,
         (
             Option<UnboundedSender<action::Action>>,
             Option<JoinHandle<Result<()>>>,
@@ -65,24 +70,20 @@ impl AppServer {
 
                         actions.iter().for_each(|action| {
                             debug!("Received action {:?}", action);
-                            self.components.iter_mut().for_each(
-                                move |(id, (sander, _, component))| {
-                                    let ans: std::result::Result<(), color_eyre::eyre::Error> =
-                                        component.handle_action(action.clone());
-                                    match ans {
-                                        Err(e) => {
-                                            error!("handle_action fail {:?}", e);
-                                        }
+                            self.components
+                                .iter_mut()
+                                .for_each(|(id, (sander, _, component))| {
+                                    match (sander, component.action_filter(action)) {
+                                        (Some(sander), true) => match sander.send(action.clone()) {
+                                            Err(e) => error!(
+                                                "Failed to send action {:?} to component {:?}: {}",
+                                                action, id, e
+                                            ),
+                                            _ => {}
+                                        },
                                         _ => {}
                                     };
-                                    match sander {
-                                        Some(sander) => {
-                                            sander.send(action.clone());
-                                        }
-                                        _ => {}
-                                    };
-                                },
-                            );
+                                });
                         });
                     }
                 }
@@ -138,21 +139,22 @@ impl AppServer {
         Ok(())
     }
 
-    fn get_unused_id(&self) -> u32 {
+    fn get_unused_id(&self) -> PID {
         let mut id = 0;
-        while self.components.contains_key(&id) {
+        while self.components.contains_key(&PID(id)) {
             id += 1;
         }
-        id
+        PID(id)
     }
 
-    fn add_component(&mut self, component: Box<dyn Component>) -> Result<u32> {
+    fn add_component(&mut self, component: Box<dyn Component>) -> Result<PID> {
         debug!("Adding component");
         let id = self.get_unused_id();
         self.components.insert(id, (None, None, component));
         match self.components.get_mut(&id) {
             Some((sender, task, component)) => {
                 component.init()?;
+                component.register_id(id)?;
                 component.register_config_handler(self.config.clone())?;
                 match sender {
                     Some(_) => {

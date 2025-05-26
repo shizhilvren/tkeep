@@ -2,6 +2,8 @@ use super::super::Component;
 use super::pty;
 use crate::action::Action::Server as s_action_e;
 use crate::action::server::Action as s_action;
+use crate::components::PID;
+use crate::components::server::worker;
 use crate::event::Event::Server as s_event_e;
 use crate::event::server::Event as s_event;
 use crate::tool;
@@ -22,6 +24,7 @@ use vte::{Params, Parser, Perform};
 #[derive(Debug, Clone, PartialEq, Eq, Display, Serialize, Deserialize)]
 pub enum Action {
     BufferIn(Vec<u8>),
+    ReplayData((PID, Vec<u8>)),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Display, Serialize, Deserialize)]
@@ -30,15 +33,30 @@ pub enum Event {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
-struct PtyOutputToken {
+pub struct PtyOutputToken {
     action: String,
     mean: VTEEvent,
-    buf: Vec<u8>,
+    pub buf: Vec<u8>,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Display, Serialize, Deserialize, Default)]
 enum VTEEvent {
     #[default]
     Print,
+    Execute(u8),
+    Hook,
+    Put,
+    UnHook,
+    OscDispatch {
+        params: Vec<Vec<u8>>,
+        bell_terminated: bool,
+    },
+    CsiDispatch {
+        params: Vec<Vec<u16>>,
+        intermediates: Vec<u8>,
+        ignore: bool,
+        c: char,
+    },
+    EscDispatch,
 }
 
 #[derive(Debug, Default)]
@@ -128,22 +146,35 @@ impl Perform for TokenBuffer {
         mem::swap(&mut self.buffer, &mut buf);
         self.token = Some(PtyOutputToken {
             buf,
-            mean: VTEEvent::Print,
+            mean: VTEEvent::OscDispatch {
+                params: params.iter().map(|&p| p.to_vec()).collect(),
+                bell_terminated,
+            },
             action: msg,
         });
     }
 
     fn csi_dispatch(&mut self, params: &Params, intermediates: &[u8], ignore: bool, c: char) {
         let msg = format!(
-            "[csi_dispatch] params={:#?}, intermediates={:?}, ignore={:?}, char={:?}",
+            "[csi_dispatch] params={:#?} , intermediates={:?}, ignore={:?}, char={:?}",
             params, intermediates, ignore, c
+        );
+        let a = params.iter().map(|e| e).collect::<Vec<_>>();
+        debug!(
+            "[csi_dispatch] params={:?} intermediates={:?}, ignore={:?}, char={:?}",
+            a, intermediates, ignore, c
         );
         debug!("{}", &msg);
         let mut buf = vec![];
         mem::swap(&mut self.buffer, &mut buf);
         self.token = Some(PtyOutputToken {
             buf,
-            mean: VTEEvent::Print,
+            mean: VTEEvent::CsiDispatch {
+                params: params.iter().map(|e| e.to_vec()).collect(),
+                intermediates: intermediates.to_vec(),
+                ignore,
+                c,
+            },
             action: msg,
         });
     }
@@ -188,7 +219,6 @@ impl TokenBuffer {
         self.statemachine = Some(statemachine);
         ret
     }
-
 }
 
 impl PtyBuffer {
@@ -246,11 +276,60 @@ impl Component for PtyBuffer {
                     data.clone(),
                 ))));
             }
-            s_event_e(s_event::PtyBuffer(Event::BufferToken(token)))=>{
+            s_event_e(s_event::PtyBuffer(Event::BufferToken(token))) => {
                 self.output_buf.push_back(token.clone());
+            }
+            s_event_e(s_event::Worker(worker::Event::Replay(pid))) => {
+                ret.push(s_action_e(s_action::PtyBuffer(Action::ReplayData((
+                    pid.clone(),
+                    self.output_buf
+                        .iter()
+                        .filter(|token| !token.mean.is_query())
+                        .flat_map(|token| token.buf.clone())
+                        .collect(),
+                )))));
             }
             _ => {}
         };
         Ok(ret)
+    }
+}
+
+impl VTEEvent {
+    pub fn is_query(&self) -> bool {
+        match self {
+            VTEEvent::OscDispatch {
+                params,
+                bell_terminated,
+            } => false,
+            VTEEvent::CsiDispatch {
+                params,
+                intermediates,
+                ignore,
+                c,
+            } => {
+                let params = params.iter().map(|e| e.as_slice()).collect::<Vec<_>>();
+                let params = params.as_slice();
+                let intermediates = intermediates.as_slice();
+                match (params, intermediates, ignore, c) {
+                    ([[6_u16]], [], false, 'n') => true,   //光标位置查询
+                    ([[0_u16]], [62], false, 'c') => true, //设备属性查询
+                    // (_, _, _, 'c') => true,
+                    // (_, _, _, 'C') => true,
+                    // (_, _, _, 'h') => true,
+                    // (_, _, _, 'H') => true,
+                    // (_, _, _, 'l') => true,
+                    // (_, _, _, 'm') => true,
+                    // (_, _, _, 'n') => true,
+                    (_, _, _, 'J') => true,
+                    (_, _, _, 'K') => true,
+                    // (_, _, _, 'p') => true,
+                    // (_, _, _, 'r') => true,
+                    (_, _, _, 't') => true,
+                    _ => false,
+                }
+            }
+            _ => false,
+        }
     }
 }
