@@ -1,5 +1,3 @@
-use std::collections::VecDeque;
-use std::mem;
 use super::super::Component;
 use super::pty;
 use crate::action::Action::Server as s_action_e;
@@ -12,6 +10,8 @@ use bytes::buf;
 use color_eyre::{Result, eyre::eyre};
 use portable_pty::{Child, CommandBuilder, PtySize, native_pty_system};
 use serde::{Deserialize, Serialize};
+use std::collections::VecDeque;
+use std::mem;
 use strum::Display;
 use tokio::io::AsyncReadExt;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
@@ -31,9 +31,9 @@ pub enum Event {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 struct PtyOutputToken {
-    buf: Vec<u8>,
-    mean: VTEEvent,
     action: String,
+    mean: VTEEvent,
+    buf: Vec<u8>,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Display, Serialize, Deserialize, Default)]
 enum VTEEvent {
@@ -61,7 +61,7 @@ impl Perform for TokenBuffer {
         let mut buf = vec![];
         mem::swap(&mut self.buffer, &mut buf);
         self.token = Some(PtyOutputToken {
-            buf: self.buffer.clone(),
+            buf,
             mean: VTEEvent::Print,
             action: msg,
         });
@@ -73,7 +73,7 @@ impl Perform for TokenBuffer {
         let mut buf = vec![];
         mem::swap(&mut self.buffer, &mut buf);
         self.token = Some(PtyOutputToken {
-            buf: self.buffer.clone(),
+            buf,
             mean: VTEEvent::Print,
             action: msg,
         });
@@ -88,7 +88,7 @@ impl Perform for TokenBuffer {
         let mut buf = vec![];
         mem::swap(&mut self.buffer, &mut buf);
         self.token = Some(PtyOutputToken {
-            buf: self.buffer.clone(),
+            buf,
             mean: VTEEvent::Print,
             action: msg,
         });
@@ -100,7 +100,7 @@ impl Perform for TokenBuffer {
         let mut buf = vec![];
         mem::swap(&mut self.buffer, &mut buf);
         self.token = Some(PtyOutputToken {
-            buf: self.buffer.clone(),
+            buf,
             mean: VTEEvent::Print,
             action: msg,
         });
@@ -112,7 +112,7 @@ impl Perform for TokenBuffer {
         let mut buf = vec![];
         mem::swap(&mut self.buffer, &mut buf);
         self.token = Some(PtyOutputToken {
-            buf: self.buffer.clone(),
+            buf,
             mean: VTEEvent::Print,
             action: msg,
         });
@@ -127,7 +127,7 @@ impl Perform for TokenBuffer {
         let mut buf = vec![];
         mem::swap(&mut self.buffer, &mut buf);
         self.token = Some(PtyOutputToken {
-            buf: self.buffer.clone(),
+            buf,
             mean: VTEEvent::Print,
             action: msg,
         });
@@ -142,7 +142,7 @@ impl Perform for TokenBuffer {
         let mut buf = vec![];
         mem::swap(&mut self.buffer, &mut buf);
         self.token = Some(PtyOutputToken {
-            buf: self.buffer.clone(),
+            buf,
             mean: VTEEvent::Print,
             action: msg,
         });
@@ -157,7 +157,7 @@ impl Perform for TokenBuffer {
         let mut buf = vec![];
         mem::swap(&mut self.buffer, &mut buf);
         self.token = Some(PtyOutputToken {
-            buf: self.buffer.clone(),
+            buf,
             mean: VTEEvent::Print,
             action: msg,
         });
@@ -188,16 +188,7 @@ impl TokenBuffer {
         self.statemachine = Some(statemachine);
         ret
     }
-    fn action(&mut self) -> PtyOutputToken {
-        let mut token = PtyOutputToken::default();
-        if !self.buffer.is_empty() {
-            token.buf = self.buffer.clone();
-            self.buffer.clear();
-        }
-        token.mean = VTEEvent::Print;
-        token.action = "print".to_string();
-        token
-    }
+
 }
 
 impl PtyBuffer {
@@ -254,6 +245,9 @@ impl Component for PtyBuffer {
                 ret.push(s_action_e(s_action::PtyBuffer(Action::BufferIn(
                     data.clone(),
                 ))));
+            }
+            s_event_e(s_event::PtyBuffer(Event::BufferToken(token)))=>{
+                self.output_buf.push_back(token.clone());
             }
             _ => {}
         };

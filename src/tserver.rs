@@ -1,19 +1,15 @@
-use clap::Parser;
 use color_eyre::Result;
-use tokio::task;
 use tracing::debug;
-
+mod action;
+mod app_client;
+mod app_server;
+mod components;
 mod config;
 mod errors;
-mod logging;
-mod app_server;
-mod app_client;
-mod action;
 mod event;
-mod components;
-mod tool;
+mod logging;
 mod message;
-
+mod tool;
 
 #[tokio::main(flavor = "current_thread")]
 
