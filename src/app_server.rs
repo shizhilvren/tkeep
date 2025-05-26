@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::components::{
     self,
-    server::{client_listener, pty, worker},
+    server::{client_listener, pty, pty_buffer, worker},
 };
 use crate::event::Event::Server as s_event_e;
 use crate::event::server::Event as s_event;
@@ -31,6 +31,7 @@ use crate::app_server;
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Event {
     StartPty,
+    StartPtyBuffer,
     StartClinetListener,
 }
 
@@ -106,6 +107,10 @@ impl AppServer {
                 self.add_component(Box::new(client_listener::ClinetListener::new()))?;
                 None
             }
+            s_event_e(s_event::App(app_server::Event::StartPtyBuffer)) => {
+                self.add_component(Box::new(pty_buffer::PtyBuffer::new()))?;
+                None
+            }
             s_event_e(s_event::ClinetListener(client_listener::Event::NewClient(stream))) => {
                 self.add_component(Box::new(worker::Worker::new(stream)))?;
                 None
@@ -113,6 +118,7 @@ impl AppServer {
 
             _ => Some(event),
         };
+
         Ok(next)
     }
 
@@ -123,6 +129,8 @@ impl AppServer {
     fn init(&self) -> Result<()> {
         self.event_tx
             .send(s_event_e(s_event::App(app_server::Event::StartPty)))?;
+        self.event_tx
+            .send(s_event_e(s_event::App(app_server::Event::StartPtyBuffer)))?;
         self.event_tx.send(s_event_e(s_event::App(
             app_server::Event::StartClinetListener,
         )))?;

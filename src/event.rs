@@ -8,7 +8,7 @@ pub enum Event {
 
 pub mod server {
     use crate::app_server;
-    use crate::components::server::{client_listener, pty};
+    use crate::components::server::{client_listener, pty, pty_buffer};
     use strum::Display;
 
     #[derive(Debug, Display)]
@@ -16,11 +16,13 @@ pub mod server {
         App(app_server::Event),
         Pty(pty::Event),
         ClinetListener(client_listener::Event),
+        PtyBuffer(pty_buffer::Event),
+
     }
 }
 
 pub mod client {
-    use crate::components::client::{input, worker};
+    use crate::components::{client::{input, worker}};
     use strum::Display;
     #[derive(Debug, Display)]
     pub enum Event {
