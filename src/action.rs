@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use strum::Display;
-#[derive(Debug, Clone, PartialEq, Eq, Display, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Display)]
 pub enum Action {
     Server(server::Action),
     Clinet(client::Action),
@@ -8,10 +8,9 @@ pub enum Action {
 
 pub mod server {
     use crate::components::server::{pty, pty_buffer, worker};
-    use serde::{Deserialize, Serialize};
     use strum::Display;
 
-    #[derive(Debug, Clone, PartialEq, Eq, Display, Serialize, Deserialize)]
+    #[derive(Debug, Clone, PartialEq, Eq, Display)]
     pub enum Action {
         ServerStart,
         Pty(pty::Action),

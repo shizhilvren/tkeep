@@ -1,6 +1,3 @@
-use std::os::fd::AsRawFd;
-use std::str::from_utf8;
-
 use super::super::Component;
 use super::{output, worker};
 use crate::action::Action::Clinet as c_action_e;
@@ -9,14 +6,14 @@ use crate::event::Event::Client as c_event_e;
 use crate::event::client::Event as c_event;
 use crate::{action, event, tool};
 use color_eyre::{Result, eyre::eyre};
-use crossterm::execute;
-use futures::StreamExt;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use strum::Display;
 use tokio::io::AsyncReadExt;
-use tokio::net::UnixStream;
 use tokio::select;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use tokio_stream::StreamExt;
 use tracing::{debug, error};
 
 #[derive(Debug, Clone, PartialEq, Eq, Display, Serialize, Deserialize)]
@@ -60,29 +57,27 @@ impl Input {
         // execute!(std::io::stdout(), crossterm::event::EnableMouseCapture)?;
         match crossterm::terminal::enable_raw_mode() {
             Ok(()) => {
-                // let mut tty = tokio::fs::File::open("/dev/tty").await?;
+                let mut resize_signals =
+                    signal_hook_tokio::Signals::new([signal_hook::consts::SIGWINCH])?;
+                let mut tty = tokio::fs::File::open("/dev/tty").await?;
                 let mut buf = [0_u8; tool::BUF_SIZE];
-                let mut event_stream = crossterm::event::EventStream::new();
-                let mut tty = tokio::fs::OpenOptions::new()
-                    .read(true)
-                    .write(false)
-                    .open("/dev/tty")
-                    .await?;
                 loop {
                     select! {
-                        n = tty.read(&mut buf)=>{
+                         n = tty.read(&mut buf) => {
                             let n = n?;
-                            debug!("tty event {:?}", from_utf8(&buf[..n]));
                             event_tx.send(c_event_e(c_event::Input(Event::PtyIn(buf[..n].to_vec()))))?;
-                        }
-                        event = event_stream.next() => {
-                            debug!("event stream event {:?}", event);
-                            let event = event.ok_or(eyre!("Failed to read event from stream"))??;
-                            handle_tty_event(event, &mut event_tx).await?;
-                        },
-                    };
-                    // let n = tty.read(&mut buf).await?;
-                    // event_tx.send(c_event_e(c_event::Input(Event::PtyIn(buf[..n].to_vec()))))?;
+                         }
+
+                         resize = resize_signals.next() => {
+                            match resize {
+                                Some(signal_hook::consts::SIGWINCH) => {
+                                    let size = crossterm::terminal::size()?;
+                                    event_tx.send(c_event_e(c_event::Input(Event::Resize { width: size.0, height: size.1 })))?;
+                                }
+                                _ => {}
+                            }
+                         }
+                    }
                 }
             }
             Err(e) => {

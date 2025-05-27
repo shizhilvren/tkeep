@@ -17,28 +17,28 @@ use std::mem;
 use strum::Display;
 use tokio::io::AsyncReadExt;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
-use tracing::{debug, error};
+use tracing::{debug, error, trace};
 use tracing_subscriber::field::debug;
 use vte::{Params, Parser, Perform};
 
-#[derive(Debug, Clone, PartialEq, Eq, Display, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Display)]
 pub enum Action {
     BufferIn(Vec<u8>),
     ReplayData((PID, Vec<u8>)),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Display, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Display)]
 pub enum Event {
     BufferToken(PtyOutputToken),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct PtyOutputToken {
-    action: String,
+    // action: String,
     mean: VTEEvent,
     pub buf: Vec<u8>,
 }
-#[derive(Debug, Clone, PartialEq, Eq, Display, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Display, Default)]
 enum VTEEvent {
     #[default]
     Print,
@@ -63,7 +63,8 @@ enum VTEEvent {
 pub struct PtyBuffer {
     event_tx: Option<UnboundedSender<event::Event>>,
     action_rx: Option<UnboundedReceiver<action::Action>>,
-    output_buf: VecDeque<PtyOutputToken>,
+    // output_buf: VecDeque<PtyOutputToken>,
+    output_buf: VecDeque<u8>,
 }
 #[derive(Default)]
 struct TokenBuffer {
@@ -81,7 +82,7 @@ impl Perform for TokenBuffer {
         self.token = Some(PtyOutputToken {
             buf,
             mean: VTEEvent::Print,
-            action: msg,
+            // action: msg,
         });
     }
 
@@ -93,7 +94,7 @@ impl Perform for TokenBuffer {
         self.token = Some(PtyOutputToken {
             buf,
             mean: VTEEvent::Print,
-            action: msg,
+            // action: msg,
         });
     }
 
@@ -108,7 +109,7 @@ impl Perform for TokenBuffer {
         self.token = Some(PtyOutputToken {
             buf,
             mean: VTEEvent::Print,
-            action: msg,
+            // action: msg,
         });
     }
 
@@ -120,7 +121,7 @@ impl Perform for TokenBuffer {
         self.token = Some(PtyOutputToken {
             buf,
             mean: VTEEvent::Print,
-            action: msg,
+            // action: msg,
         });
     }
 
@@ -132,7 +133,7 @@ impl Perform for TokenBuffer {
         self.token = Some(PtyOutputToken {
             buf,
             mean: VTEEvent::Print,
-            action: msg,
+            // action: msg,
         });
     }
 
@@ -150,7 +151,7 @@ impl Perform for TokenBuffer {
                 params: params.iter().map(|&p| p.to_vec()).collect(),
                 bell_terminated,
             },
-            action: msg,
+            // action: msg,
         });
     }
 
@@ -170,7 +171,7 @@ impl Perform for TokenBuffer {
                 ignore,
                 c,
             },
-            action: msg,
+            // action: msg,
         });
     }
 
@@ -185,7 +186,7 @@ impl Perform for TokenBuffer {
         self.token = Some(PtyOutputToken {
             buf,
             mean: VTEEvent::Print,
-            action: msg,
+            // action: msg,
         });
     }
     fn terminated(&self) -> bool {
@@ -231,7 +232,10 @@ impl PtyBuffer {
                 s_action_e(s_action::PtyBuffer(Action::BufferIn(data))) => {
                     let tokens = token_buffer.advance(&data);
                     for token in tokens {
-                        event_tx.send(s_event_e(s_event::PtyBuffer(Event::BufferToken(token))))?;
+                        if !token.mean.is_query() {
+                            event_tx
+                                .send(s_event_e(s_event::PtyBuffer(Event::BufferToken(token))))?;
+                        }
                     }
                 }
                 _ => {}
@@ -272,16 +276,22 @@ impl Component for PtyBuffer {
                 ))));
             }
             s_event_e(s_event::PtyBuffer(Event::BufferToken(token))) => {
-                self.output_buf.push_back(token.clone());
+                trace!(
+                    "buffer size {} MB",
+                    self.output_buf.len() as f64 * size_of::<u8>() as f64 / 4_f64 / 1024_f64
+                );
+                token.buf.iter().for_each(|e| {
+                    self.output_buf.push_back(e.clone());
+                });
             }
             s_event_e(s_event::Worker(worker::Event::Replay(pid))) => {
                 ret.push(s_action_e(s_action::PtyBuffer(Action::ReplayData((
                     pid.clone(),
                     self.output_buf
                         .iter()
-                        .filter(|token| !token.mean.is_query())
-                        .flat_map(|token| token.buf.clone())
-                        .collect(),
+                        .map(|e| e.clone())
+                        // .filter(|token| !token.mean.is_query())
+                        .collect::<Vec<u8>>(),
                 )))));
             }
             _ => {}

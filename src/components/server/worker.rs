@@ -8,13 +8,10 @@ use crate::event::Event::Server as s_event_e;
 use crate::event::server::Event as s_event;
 use crate::message::Msg;
 use crate::{action, event, tool};
-use bincode::{Decode, Encode};
 use color_eyre::{Result, eyre::eyre};
 use serde::{Deserialize, Serialize};
 use std::{option::Option, str::FromStr};
-
 use strum::Display;
-use tokio::io::AsyncReadExt;
 use tokio::net::{UnixListener, UnixStream};
 use tokio::select;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};

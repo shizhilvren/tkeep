@@ -4,7 +4,6 @@ use std::{collections::HashMap, env, path::PathBuf};
 
 use color_eyre::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use derive_deref::{Deref, DerefMut};
 use directories::ProjectDirs;
 use lazy_static::lazy_static;
 use serde::{Deserialize, de::Deserializer};
