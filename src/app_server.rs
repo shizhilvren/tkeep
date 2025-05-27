@@ -62,8 +62,14 @@ impl AppServer {
                         let actions = self.components.iter_mut().fold(
                             vec![],
                             |mut acc, (id, (_, _, component))| {
-                                let actions = component.handle_events(&event).unwrap_or_default();
-                                acc.extend(actions);
+                                let actions = component.handle_events(&event);
+                                match actions {
+                                    Ok(actions) => acc.extend(actions),
+                                    Err(e) => {
+                                        error!("Failed to handle event {:?} in component {:?}: {}", event, id, e);
+                                    }
+                                    
+                                }
                                 acc
                             },
                         );

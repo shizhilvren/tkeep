@@ -7,6 +7,7 @@ use crate::event::Event::Client as c_event_e;
 use crate::event::client::Event as c_event;
 use crate::{action, event, tool};
 use color_eyre::{Result, eyre::eyre};
+use crossterm::{Command, execute};
 use serde::{Deserialize, Serialize};
 use strum::Display;
 use tokio::io::AsyncReadExt;
@@ -20,12 +21,14 @@ pub enum Action {}
 #[derive(Debug, Clone, PartialEq, Eq, Display, Serialize, Deserialize)]
 pub enum Event {
     PtyOut(Vec<u8>),
+    Replay(Vec<u8>),
 }
 
 #[derive(Debug, Default)]
 pub struct Output {
     event_tx: Option<UnboundedSender<event::Event>>,
     action_rx: Option<UnboundedReceiver<action::Action>>,
+    reply_finish: bool,
 }
 
 impl Output {
@@ -47,13 +50,39 @@ impl Component for Output {
 
     fn handle_events(&mut self, event: &event::Event) -> Result<Vec<action::Action>> {
         let mut ret = vec![];
+        let mut out = std::io::stdout();
         match event {
             c_event_e(c_event::Output(Event::PtyOut(data))) => {
-                let mut out = std::io::stdout();
-                out.write_all(&data)
-                    .map_err(|e| eyre!("Failed to write to stdout: {}", e))?;
-                out.flush()
-                    .map_err(|e| eyre!("Failed to flush stdout: {}", e))?;
+                if self.reply_finish {
+                    out.write_all(&data)
+                        .map_err(|e| eyre!("Failed to write to stdout: {}", e))?;
+                    out.flush()
+                        .map_err(|e| eyre!("Failed to flush stdout: {}", e))?;
+                }
+            }
+            c_event_e(c_event::Output(Event::Replay(data))) => {
+                if !self.reply_finish {
+                    self.reply_finish = true;
+                    execute!(
+                        out,
+                        crossterm::style::SetAttribute(crossterm::style::Attribute::Reset)
+                    )?;
+                    execute!(out, crossterm::terminal::LeaveAlternateScreen)?;
+                    // execute!(out, crossterm::terminal::EnableLineWrap)?;
+                    execute!(out, crossterm::style::ResetColor)?;
+                    execute!(out, crossterm::cursor::MoveTo(0, 0))?;
+                    execute!(
+                        out,
+                        crossterm::terminal::Clear(crossterm::terminal::ClearType::All)
+                    )?;
+                    // crossterm::terminal::enable_raw_mode()?;
+                    out.write_all(&data)
+                        .map_err(|e| eyre!("Failed to write to stdout: {}", e))?;
+                    out.flush()
+                        .map_err(|e| eyre!("Failed to flush stdout: {}", e))?;
+                } else {
+                    error!("Replay finished, ignoring replay data");
+                }
             }
             _ => {}
         }

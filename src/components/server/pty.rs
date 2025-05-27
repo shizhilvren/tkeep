@@ -19,12 +19,14 @@ use tracing::{debug, error};
 #[derive(Debug, Clone, PartialEq, Eq, Display, Serialize, Deserialize)]
 pub enum Action {
     PtyIn(Vec<u8>),
+    Resize { width: u16, height: u16 },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Display, Serialize, Deserialize)]
 pub enum Event {
     PtyOut(Vec<u8>),
     PtyIn(Vec<u8>),
+    Resize { width: u16, height: u16 },
 }
 
 #[derive(Debug, Default)]
@@ -41,6 +43,7 @@ impl Pty {
         action: Option<action::Action>,
         event_tx: &UnboundedSender<event::Event>,
         tty_in: &mut Box<dyn std::io::Write + Send + 'static>,
+        pty_pair: &mut portable_pty::PtyPair,
     ) -> Result<()> {
         match action {
             Some(action) => match action {
@@ -48,8 +51,18 @@ impl Pty {
                     if let Err(e) = tty_in.write_all(&data) {
                         error!("Failed to write to pty: {}", e);
                         return Err(eyre!("Failed to write to pty"));
-                    } else {
                     }
+                }
+                s_action_e(s_action::Pty(self::Action::Resize { width, height })) => {
+                    pty_pair
+                        .master
+                        .resize(PtySize {
+                            rows: height,
+                            cols: width,
+                            pixel_width: 0,
+                            pixel_height: 0,
+                        })
+                        .map_err(|e| eyre!("Failed to resize pty: {:?}", e))?;
                 }
                 _ => {}
             },
@@ -86,7 +99,7 @@ impl Pty {
         mut action_rx: UnboundedReceiver<action::Action>,
     ) -> Result<()> {
         let pty_system = native_pty_system();
-        let pair = pty_system
+        let mut pair = pty_system
             .openpty(PtySize {
                 rows: 24,
                 cols: 80,
@@ -137,7 +150,7 @@ impl Pty {
         loop {
             tokio::select! {
                 action = action_rx.recv() => {
-                    Self::handle_action(action, &event_tx, &mut tty_in).await?;
+                    Self::handle_action(action, &event_tx, &mut tty_in, &mut pair).await?;
                 },
                 output = tty_out.read(&mut buf) => {
                     Self::handle_output(&mut event_tx, output, &buf).await?;
@@ -176,8 +189,20 @@ impl Component for Pty {
             s_event_e(s_event::Pty(self::Event::PtyIn(data))) => {
                 ret.push(s_action_e(s_action::Pty(Action::PtyIn(data.clone()))));
             }
+            s_event_e(s_event::Pty(self::Event::Resize { width, height })) => {
+                ret.push(s_action_e(s_action::Pty(Action::Resize {
+                    width: *width,
+                    height: *height,
+                })));
+            }
             _ => {}
         };
         Ok(ret)
+    }
+    fn action_filter(&mut self, action: &action::Action) -> bool {
+        match action {
+            s_action_e(s_action::Pty(_)) => true,
+            _ => false,
+        }
     }
 }

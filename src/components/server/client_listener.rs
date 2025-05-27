@@ -71,4 +71,8 @@ impl Component for ClinetListener {
             _ => Err(eyre!("Failed to get event or action channel")),
         }
     }
+    fn action_filter(&mut self, action: &action::Action) -> bool {
+        let _ = action;
+        false
+    }
 }

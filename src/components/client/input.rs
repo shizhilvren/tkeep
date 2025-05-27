@@ -1,16 +1,23 @@
+use std::os::fd::AsRawFd;
+use std::str::from_utf8;
+
 use super::super::Component;
+use super::{output, worker};
 use crate::action::Action::Clinet as c_action_e;
 use crate::action::client::Action as c_action;
 use crate::event::Event::Client as c_event_e;
 use crate::event::client::Event as c_event;
 use crate::{action, event, tool};
 use color_eyre::{Result, eyre::eyre};
+use crossterm::execute;
+use futures::StreamExt;
 use serde::{Deserialize, Serialize};
 use strum::Display;
 use tokio::io::AsyncReadExt;
 use tokio::net::UnixStream;
+use tokio::select;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
-use tracing::error;
+use tracing::{debug, error};
 
 #[derive(Debug, Clone, PartialEq, Eq, Display, Serialize, Deserialize)]
 pub enum Action {}
@@ -19,6 +26,7 @@ pub enum Action {}
 pub enum Event {
     Start,
     PtyIn(Vec<u8>),
+    Resize { width: u16, height: u16 },
 }
 
 #[derive(Debug, Default)]
@@ -35,13 +43,46 @@ impl Input {
         mut event_tx: UnboundedSender<event::Event>,
         mut action_rx: UnboundedReceiver<action::Action>,
     ) -> Result<()> {
+        let handle_tty_event = async |event: crossterm::event::Event,
+                                      sander: &mut UnboundedSender<event::Event>|
+               -> Result<()> {
+            match event {
+                crossterm::event::Event::Resize(w, h) => {
+                    sander.send(c_event_e(c_event::Input(Event::Resize {
+                        width: w,
+                        height: h,
+                    })))?;
+                }
+                _ => {}
+            }
+            Ok(())
+        };
+        // execute!(std::io::stdout(), crossterm::event::EnableMouseCapture)?;
         match crossterm::terminal::enable_raw_mode() {
             Ok(()) => {
-                let mut tty = tokio::fs::File::open("/dev/tty").await?;
+                // let mut tty = tokio::fs::File::open("/dev/tty").await?;
                 let mut buf = [0_u8; tool::BUF_SIZE];
+                let mut event_stream = crossterm::event::EventStream::new();
+                let mut tty = tokio::fs::OpenOptions::new()
+                    .read(true)
+                    .write(false)
+                    .open("/dev/tty")
+                    .await?;
                 loop {
-                    let n = tty.read(&mut buf).await?;
-                    event_tx.send(c_event_e(c_event::Input(Event::PtyIn(buf[..n].to_vec()))))?;
+                    select! {
+                        n = tty.read(&mut buf)=>{
+                            let n = n?;
+                            debug!("tty event {:?}", from_utf8(&buf[..n]));
+                            event_tx.send(c_event_e(c_event::Input(Event::PtyIn(buf[..n].to_vec()))))?;
+                        }
+                        event = event_stream.next() => {
+                            debug!("event stream event {:?}", event);
+                            let event = event.ok_or(eyre!("Failed to read event from stream"))??;
+                            handle_tty_event(event, &mut event_tx).await?;
+                        },
+                    };
+                    // let n = tty.read(&mut buf).await?;
+                    // event_tx.send(c_event_e(c_event::Input(Event::PtyIn(buf[..n].to_vec()))))?;
                 }
             }
             Err(e) => {
@@ -76,6 +117,16 @@ impl Component for Input {
     }
     fn handle_events(&mut self, event: &event::Event) -> Result<Vec<action::Action>> {
         let mut ret = vec![];
+        match event {
+            c_event_e(c_event::Output(output::Event::Replay(_))) => {
+                let size = crossterm::terminal::size()?;
+                ret.push(c_action_e(c_action::Worker(worker::Action::Resize {
+                    width: size.0,
+                    height: size.1,
+                })));
+            }
+            _ => {}
+        };
         Ok(ret)
     }
 }

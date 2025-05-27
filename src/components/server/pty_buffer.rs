@@ -51,10 +51,10 @@ enum VTEEvent {
         bell_terminated: bool,
     },
     CsiDispatch {
+        c: char,
+        ignore: bool,
         params: Vec<Vec<u16>>,
         intermediates: Vec<u8>,
-        ignore: bool,
-        c: char,
     },
     EscDispatch,
 }
@@ -75,7 +75,7 @@ struct TokenBuffer {
 impl Perform for TokenBuffer {
     fn print(&mut self, c: char) {
         let msg = format!("[print] {:?}", c);
-        debug!("{}", &msg);
+        // debug!("{}", &msg);
         let mut buf = vec![];
         mem::swap(&mut self.buffer, &mut buf);
         self.token = Some(PtyOutputToken {
@@ -87,7 +87,7 @@ impl Perform for TokenBuffer {
 
     fn execute(&mut self, byte: u8) {
         let msg = format!("[execute] {:02x}", byte);
-        debug!("{}", &msg);
+        // debug!("{}", &msg);
         let mut buf = vec![];
         mem::swap(&mut self.buffer, &mut buf);
         self.token = Some(PtyOutputToken {
@@ -102,7 +102,7 @@ impl Perform for TokenBuffer {
             "[hook] params={:?}, intermediates={:?}, ignore={:?}, char={:?}",
             params, intermediates, ignore, c
         );
-        debug!("{}", &msg);
+        // debug!("{}", &msg);
         let mut buf = vec![];
         mem::swap(&mut self.buffer, &mut buf);
         self.token = Some(PtyOutputToken {
@@ -114,7 +114,7 @@ impl Perform for TokenBuffer {
 
     fn put(&mut self, byte: u8) {
         let msg = format!("[put] {:02x}", byte);
-        debug!("{}", &msg);
+        // debug!("{}", &msg);
         let mut buf = vec![];
         mem::swap(&mut self.buffer, &mut buf);
         self.token = Some(PtyOutputToken {
@@ -126,7 +126,7 @@ impl Perform for TokenBuffer {
 
     fn unhook(&mut self) {
         let msg = format!("[unhook]");
-        debug!("{}", &msg);
+        // debug!("{}", &msg);
         let mut buf = vec![];
         mem::swap(&mut self.buffer, &mut buf);
         self.token = Some(PtyOutputToken {
@@ -141,7 +141,7 @@ impl Perform for TokenBuffer {
             "[osc_dispatch] params={:?} bell_terminated={}",
             params, bell_terminated
         );
-        debug!("{}", &msg);
+        // debug!("{}", &msg);
         let mut buf = vec![];
         mem::swap(&mut self.buffer, &mut buf);
         self.token = Some(PtyOutputToken {
@@ -156,15 +156,10 @@ impl Perform for TokenBuffer {
 
     fn csi_dispatch(&mut self, params: &Params, intermediates: &[u8], ignore: bool, c: char) {
         let msg = format!(
-            "[csi_dispatch] params={:#?} , intermediates={:?}, ignore={:?}, char={:?}",
+            "[csi_dispatch] params={:?} intermediates={:?}, ignore={:?}, char={:?}",
             params, intermediates, ignore, c
         );
-        let a = params.iter().map(|e| e).collect::<Vec<_>>();
-        debug!(
-            "[csi_dispatch] params={:?} intermediates={:?}, ignore={:?}, char={:?}",
-            a, intermediates, ignore, c
-        );
-        debug!("{}", &msg);
+        // debug!("{}", &msg);
         let mut buf = vec![];
         mem::swap(&mut self.buffer, &mut buf);
         self.token = Some(PtyOutputToken {
@@ -184,7 +179,7 @@ impl Perform for TokenBuffer {
             "[esc_dispatch] intermediates={:?}, ignore={:?}, byte={:02x}",
             intermediates, ignore, byte
         );
-        debug!("{}", &msg);
+        // debug!("{}", &msg);
         let mut buf = vec![];
         mem::swap(&mut self.buffer, &mut buf);
         self.token = Some(PtyOutputToken {
@@ -293,15 +288,19 @@ impl Component for PtyBuffer {
         };
         Ok(ret)
     }
+    fn action_filter(&mut self, action: &action::Action) -> bool {
+        match action {
+            s_action_e(s_action::PtyBuffer(Action::BufferIn(_))) => true,
+            _ => false,
+        }
+    }
 }
 
+// reference: link
+// https://invisible-island.net/xterm/ctlseqs/ctlseqs.html
 impl VTEEvent {
     pub fn is_query(&self) -> bool {
         match self {
-            VTEEvent::OscDispatch {
-                params,
-                bell_terminated,
-            } => false,
             VTEEvent::CsiDispatch {
                 params,
                 intermediates,
@@ -312,20 +311,23 @@ impl VTEEvent {
                 let params = params.as_slice();
                 let intermediates = intermediates.as_slice();
                 match (params, intermediates, ignore, c) {
-                    ([[6_u16]], [], false, 'n') => true,   //光标位置查询
-                    ([[0_u16]], [62], false, 'c') => true, //设备属性查询
-                    // (_, _, _, 'c') => true,
-                    // (_, _, _, 'C') => true,
-                    // (_, _, _, 'h') => true,
-                    // (_, _, _, 'H') => true,
-                    // (_, _, _, 'l') => true,
-                    // (_, _, _, 'm') => true,
-                    // (_, _, _, 'n') => true,
-                    (_, _, _, 'J') => true,
-                    (_, _, _, 'K') => true,
-                    // (_, _, _, 'p') => true,
-                    // (_, _, _, 'r') => true,
-                    (_, _, _, 't') => true,
+                    (_, [], _, 'n') => true,                 //光标位置查询
+                    (_, [b'?'], _, 'n') => true,             //光标位置查询
+                    ([[0_u16]], [b'>'], false, 'c') => true, //设备属性查询
+                    (_, [b'?'], _, 'm') => true,
+                    (_, [b'$'], _, 'p') => true,
+                    (_, [b'?', b'$'], _, 'p') => true,
+                    _ => false,
+                }
+            }
+            VTEEvent::OscDispatch {
+                params,
+                bell_terminated,
+            } => {
+                let params = params.iter().map(|e| e.as_slice()).collect::<Vec<_>>();
+                let params = params.as_slice();
+                match (params, bell_terminated) {
+                    ([_, [63]], _) => true, //osc 查询序列
                     _ => false,
                 }
             }

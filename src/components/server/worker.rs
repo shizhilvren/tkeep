@@ -76,7 +76,7 @@ impl Worker {
                 s_action_e(s_action::PtyBuffer(pty_buffer::Action::ReplayData((pid_s, data)))) => {
                     if pid_s == pid {
                         if let Err(e) =
-                            tool::unix_socket::send_message(uds, &Msg::PtyOut(data)).await
+                            tool::unix_socket::send_message(uds, &Msg::Replay(data)).await
                         {
                             error!("Failed to send message: {}", e);
                             return Err(eyre!("Failed to send message"));
@@ -96,6 +96,9 @@ impl Worker {
                     match data? {
                         Msg::PtyIn(data) => {
                             event_tx.send(s_event_e(s_event::Pty(pty::Event::PtyIn(data))))?;
+                        }
+                        Msg::Resize { width, height } => {
+                            event_tx.send(s_event_e(s_event::Pty(pty::Event::Resize { width, height })))?;
                         }
                         _ => {}
                     }
@@ -153,5 +156,21 @@ impl Component for Worker {
             _ => {}
         };
         Ok(ret)
+    }
+    fn action_filter(&mut self, action: &action::Action) -> bool {
+        match action {
+            s_action_e(s_action::Worker(Action::PtyOut((pid, _)))) => {
+                if let Some(worker_pid) = self.pid.as_ref() {
+                    return pid == worker_pid;
+                }
+            }
+            s_action_e(s_action::PtyBuffer(pty_buffer::Action::ReplayData((pid, _)))) => {
+                if let Some(worker_pid) = self.pid.as_ref() {
+                    return pid == worker_pid;
+                }
+            }
+            _ => {}
+        }
+        false
     }
 }

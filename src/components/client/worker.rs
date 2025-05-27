@@ -18,6 +18,7 @@ use tracing::{debug, error};
 #[derive(Debug, Clone, PartialEq, Eq, Display, Serialize, Deserialize)]
 pub enum Action {
     PtyIn(Vec<u8>),
+    Resize { width: u16, height: u16 },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Display, Serialize, Deserialize)]
@@ -47,6 +48,10 @@ impl Worker {
                         let msg = Msg::PtyIn(data);
                         tool::unix_socket::send_message(uds, &msg).await?;
                     }
+                    c_action_e(c_action::Worker(self::Action::Resize { width, height })) => {
+                        let msg = Msg::Resize { width, height };
+                        tool::unix_socket::send_message(uds, &msg).await?;
+                    }
                     _ => {}
                 }
                 Ok(())
@@ -61,6 +66,9 @@ impl Worker {
                     match data? {
                         Msg::PtyOut(data) => {
                             event_tx.send(c_event_e(c_event::Output(output::Event::PtyOut(data))))?;
+                        }
+                        Msg::Replay(data) => {
+                            event_tx.send(c_event_e(c_event::Output(output::Event::Replay(data))))?;
                         }
                         _ => {}
                     }
@@ -98,6 +106,12 @@ impl Component for Worker {
         match event {
             c_event_e(c_event::Input(input::Event::PtyIn(data))) => {
                 ret.push(c_action_e(c_action::Worker(Action::PtyIn(data.clone()))));
+            }
+            c_event_e(c_event::Input(input::Event::Resize { width, height }))=>{
+                ret.push(c_action_e(c_action::Worker(Action::Resize {
+                    width: *width,
+                    height: *height,
+                })));
             }
             _ => {}
         }
