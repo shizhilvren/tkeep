@@ -57,12 +57,13 @@ impl Worker {
                 Ok(())
             };
         let mut uds = UnixStream::connect("/tmp/stream.sock").await?;
+        let mut msg_receive = tool::unix_socket::MessageReader::new();
         loop {
             select! {
                 action = action_rx.recv() => {
                     handle_action(action,&mut uds).await?;
                 },
-                data = tool::unix_socket::receive_message::<Msg>(&mut uds) => {
+                data = msg_receive.receive_message::<Msg>(&mut uds) => {
                     match data? {
                         Msg::PtyOut(data) => {
                             event_tx.send(c_event_e(c_event::Output(output::Event::PtyOut(data))))?;
@@ -107,7 +108,7 @@ impl Component for Worker {
             c_event_e(c_event::Input(input::Event::PtyIn(data))) => {
                 ret.push(c_action_e(c_action::Worker(Action::PtyIn(data.clone()))));
             }
-            c_event_e(c_event::Input(input::Event::Resize { width, height }))=>{
+            c_event_e(c_event::Input(input::Event::Resize { width, height })) => {
                 ret.push(c_action_e(c_action::Worker(Action::Resize {
                     width: *width,
                     height: *height,

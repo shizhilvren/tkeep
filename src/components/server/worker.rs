@@ -15,7 +15,7 @@ use strum::Display;
 use tokio::net::{UnixListener, UnixStream};
 use tokio::select;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
-use tokio_util::codec::FramedRead;
+use tokio_util::codec::{Decoder, FramedRead};
 use tracing::{debug, error};
 
 #[derive(Debug, Clone, PartialEq, Eq, Display, Serialize, Deserialize)]
@@ -85,13 +85,13 @@ impl Worker {
             };
             Ok(())
         };
-        let a = FramedRead::new(uds, tool::unix_socket::MessageReader::<Msg>{});
+        let mut msg_receive = tool::unix_socket::MessageReader::new();
         loop {
             select! {
                 action = action_rx.recv() => {
                     handle_action(action,&mut uds).await?;
                 },
-                data = tool::unix_socket::receive_message::<Msg>(&mut uds) => {
+                data = msg_receive.receive_message::<Msg>(&mut uds) => {
                     match data? {
                         Msg::PtyIn(data) => {
                             event_tx.send(s_event_e(s_event::Pty(pty::Event::PtyIn(data))))?;
