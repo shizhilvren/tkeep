@@ -37,7 +37,7 @@ impl Worker {
         Worker::default()
     }
     async fn start_player(
-        mut event_tx: UnboundedSender<event::Event>,
+        event_tx: UnboundedSender<event::Event>,
         mut action_rx: UnboundedReceiver<action::Action>,
     ) -> Result<()> {
         let handle_action =

@@ -12,17 +12,32 @@ pub mod unix_socket {
     where
         T: Encode + Debug,
     {
-        debug!("send message {:?}", msg);
         // 序列化数据
         let data = bincode::encode_to_vec(msg, bincode::config::standard())?;
 
         // 写入长度前缀（小端序 8 字节）
         let len = data.len() as u64;
+        // debug!(
+        //     "send message {:?} len is {:} {:?}, data is {:?}",
+        //     msg,
+        //     &len,
+        //     &len.to_le_bytes(),
+        //     &data
+        // );
         stream.write_all(&len.to_le_bytes()).await?;
-
+        debug!(
+            "send message len {:?} {:?}",
+            &len,
+            &len.to_le_bytes(),
+        );
         // 写入数据体
         stream.write_all(&data).await?;
-        stream.flush().await?;
+        debug!(
+            "send message data {:?} {:?}",
+            &data.len(),
+            &data,
+        );
+        // stream.flush().await?;
         Ok(())
     }
 
@@ -33,18 +48,27 @@ pub mod unix_socket {
         // 读取长度前缀
         let mut len_buf = [0u8; size_of::<u64>()];
         stream.read_exact(&mut len_buf).await?;
-        let len = u64::from_le_bytes(len_buf) as usize;
+        
+        let len = u64::from_le_bytes(len_buf);
+        debug!("Received message len {:?} {:?}", &len, &len_buf);
+        assert_ne!(
+            usize::MAX as u64,
+            len,
+            "Received message length exceeds usize::MAX"
+        );
+        let len = len as usize;
 
         // 读取数据体
         let mut data_buf = vec![0u8; len];
         stream.read_exact(&mut data_buf).await?;
+        debug!("Received message data {:?} {:?}", &len, &data_buf);
+
 
         // 反序列化数据
         let msg: (T, usize) =
             bincode::decode_from_slice(&data_buf.as_mut_slice(), bincode::config::standard())?;
-        debug!("Received message {:?}", msg);
+        // debug!("Received message {:?}", msg);
         match msg.1 == len {
-            true => {}
             false => {
                 return Err(eyre!(
                     "Data length mismatch: expected {}, got {}",
@@ -52,6 +76,7 @@ pub mod unix_socket {
                     msg.1
                 ));
             }
+            true => {}
         }
         Ok(msg.0)
     }
