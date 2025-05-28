@@ -15,6 +15,7 @@ use strum::Display;
 use tokio::net::{UnixListener, UnixStream};
 use tokio::select;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use tokio_util::codec::FramedRead;
 use tracing::{debug, error};
 
 #[derive(Debug, Clone, PartialEq, Eq, Display, Serialize, Deserialize)]
@@ -84,6 +85,7 @@ impl Worker {
             };
             Ok(())
         };
+        let a = FramedRead::new(uds, tool::unix_socket::MessageReader::<Msg>{});
         loop {
             select! {
                 action = action_rx.recv() => {

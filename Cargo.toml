@@ -15,6 +15,7 @@ path = "src/tclient.rs"
 better-panic = "0.3.0"
 bincode = "2.0.1"
 bytes = "1.9.0"
+check = "1.0.0"
 clap = { version = "4.5.20", features = [
     "derive",
     "cargo",
@@ -41,6 +42,7 @@ strip-ansi-escapes = "0.2.0"
 strum = { version = "0.27.1", features = ["derive"] }
 tokio = { version = "1.40.0", features = ["full"] }
 tokio-stream = "0.1.17"
+tokio-util = { version = "0.7.15", features = ["codec"] }
 tracing = "0.1.40"
 tracing-error = "0.2.0"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter", "serde"] }
