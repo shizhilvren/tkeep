@@ -144,11 +144,11 @@ impl Component for Worker {
                     self.replay_finish = true;
                 }
             }
-            s_event_e(s_event::PtyBuffer(pty_buffer::Event::BufferToken(token))) => {
+            s_event_e(s_event::Pty(pty::Event::PtyOut(buf))) => {
                 if self.replay_finish {
                     ret.push(s_action_e(s_action::Worker(Action::PtyOut((
                         pid,
-                        token.buf.clone(),
+                        buf.clone(),
                     )))));
                 }
             }
