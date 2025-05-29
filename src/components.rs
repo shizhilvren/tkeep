@@ -1,13 +1,7 @@
+use crate::{action::Action, config::Config, event::Event};
 use color_eyre::Result;
 use serde::{Deserialize, Serialize};
 use tokio::{sync::mpsc::UnboundedSender, task::JoinHandle};
-// use tracing::debug;
-use crate::{
-    action::{self, Action},
-    config::Config,
-    event::Event,
-};
-
 pub mod client;
 pub mod server;
 

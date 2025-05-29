@@ -1,7 +1,7 @@
-use std::collections::HashMap;
-
 use crate::action;
+#[allow(unused_imports)]
 use crate::action::Action::Clinet as c_action_e;
+#[allow(unused_imports)]
 use crate::action::client::Action as c_action;
 use crate::components::Component;
 use crate::components::client::input;
@@ -13,9 +13,11 @@ use crate::event::Event::Client as c_event_e;
 use crate::event::client::Event as c_event;
 use color_eyre::Result;
 use config::Config;
+use std::collections::HashMap;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::task::JoinHandle;
+#[allow(unused_imports)]
 use tracing::{debug, error, info};
 
 pub struct AppClient {
@@ -117,10 +119,6 @@ impl AppClient {
             _ => Some(event),
         };
         Ok(next)
-    }
-
-    fn handle_actions(&mut self, action: action::Action) -> Result<()> {
-        Ok(())
     }
 
     fn init(&self) -> Result<()> {

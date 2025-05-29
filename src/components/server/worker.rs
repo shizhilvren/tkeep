@@ -1,5 +1,5 @@
 use super::super::Component;
-use super::pty::{self, Pty};
+use super::pty::{self};
 use super::pty_buffer;
 use crate::action::Action::Server as s_action_e;
 use crate::action::server::Action as s_action;
@@ -10,11 +10,12 @@ use crate::message::Msg;
 use crate::{action, event, tool};
 use color_eyre::{Result, eyre::eyre};
 use serde::{Deserialize, Serialize};
-use std::{option::Option, str::FromStr};
+use std::option::Option;
 use strum::Display;
-use tokio::net::{UnixListener, UnixStream};
+use tokio::net::UnixStream;
 use tokio::select;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+#[allow(unused_imports)]
 use tracing::{debug, error};
 
 #[derive(Debug, Clone, PartialEq, Eq, Display, Serialize, Deserialize)]

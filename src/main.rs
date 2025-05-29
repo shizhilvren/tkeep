@@ -1,27 +1,16 @@
 use clap::Parser;
-use tracing::debug;
-mod action;
-mod app_client;
-mod app_server;
-mod cli;
-mod components;
-mod config;
-mod errors;
-mod event;
-mod logging;
-mod message;
-mod tool;
-use crate::app_client::AppClient;
-use crate::app_server::AppServer;
-use cli::Cli;
 use color_eyre::{Result, eyre::eyre};
 use daemonize::Daemonize;
 use std::{env, fs::File};
+use tkeep::app_client::AppClient;
+use tkeep::app_server::AppServer;
+use tkeep::cli::{self, Cli};
+use tracing::debug;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<()> {
-    crate::errors::init()?;
-    crate::logging::init()?;
+    tkeep::errors::init()?;
+    tkeep::logging::init()?;
 
     let args = Cli::parse();
     debug!("tkeep args are {:?}", &args);

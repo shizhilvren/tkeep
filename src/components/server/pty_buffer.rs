@@ -6,19 +6,14 @@ use crate::components::PID;
 use crate::components::server::worker;
 use crate::event::Event::Server as s_event_e;
 use crate::event::server::Event as s_event;
-use crate::tool;
 use crate::{action, event};
-use bytes::buf;
 use color_eyre::{Result, eyre::eyre};
-use portable_pty::{Child, CommandBuilder, PtySize, native_pty_system};
-use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::mem;
 use strum::Display;
-use tokio::io::AsyncReadExt;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+#[allow(unused_imports)]
 use tracing::{debug, error, trace};
-use tracing_subscriber::field::debug;
 use vte::{Params, Parser, Perform};
 
 #[derive(Debug, Clone, PartialEq, Eq, Display)]
@@ -42,10 +37,6 @@ pub struct PtyOutputToken {
 enum VTEEvent {
     #[default]
     Print,
-    Execute(u8),
-    Hook,
-    Put,
-    UnHook,
     OscDispatch {
         params: Vec<Vec<u8>>,
         bell_terminated: bool,
@@ -56,7 +47,7 @@ enum VTEEvent {
         params: Vec<Vec<u16>>,
         intermediates: Vec<u8>,
     },
-    EscDispatch,
+    Other,
 }
 
 #[derive(Debug, Default)]
@@ -75,74 +66,63 @@ struct TokenBuffer {
 
 impl Perform for TokenBuffer {
     fn print(&mut self, c: char) {
-        let msg = format!("[print] {:?}", c);
-        // debug!("{}", &msg);
+        trace!("[print] {:?}", c);
         let mut buf = vec![];
         mem::swap(&mut self.buffer, &mut buf);
         self.token = Some(PtyOutputToken {
             buf,
             mean: VTEEvent::Print,
-            // action: msg,
         });
     }
 
     fn execute(&mut self, byte: u8) {
-        let msg = format!("[execute] {:02x}", byte);
-        // debug!("{}", &msg);
+        trace!("[execute] {:02x}", byte);
         let mut buf = vec![];
         mem::swap(&mut self.buffer, &mut buf);
         self.token = Some(PtyOutputToken {
             buf,
-            mean: VTEEvent::Print,
-            // action: msg,
+            mean: VTEEvent::Other,
         });
     }
 
     fn hook(&mut self, params: &Params, intermediates: &[u8], ignore: bool, c: char) {
-        let msg = format!(
+        trace!(
             "[hook] params={:?}, intermediates={:?}, ignore={:?}, char={:?}",
             params, intermediates, ignore, c
         );
-        // debug!("{}", &msg);
         let mut buf = vec![];
         mem::swap(&mut self.buffer, &mut buf);
         self.token = Some(PtyOutputToken {
             buf,
-            mean: VTEEvent::Print,
-            // action: msg,
+            mean: VTEEvent::Other,
         });
     }
 
     fn put(&mut self, byte: u8) {
-        let msg = format!("[put] {:02x}", byte);
-        // debug!("{}", &msg);
+        trace!("[put] {:02x}", byte);
         let mut buf = vec![];
         mem::swap(&mut self.buffer, &mut buf);
         self.token = Some(PtyOutputToken {
             buf,
-            mean: VTEEvent::Print,
-            // action: msg,
+            mean: VTEEvent::Other,
         });
     }
 
     fn unhook(&mut self) {
-        let msg = format!("[unhook]");
-        // debug!("{}", &msg);
+        trace!("[unhook]");
         let mut buf = vec![];
         mem::swap(&mut self.buffer, &mut buf);
         self.token = Some(PtyOutputToken {
             buf,
-            mean: VTEEvent::Print,
-            // action: msg,
+            mean: VTEEvent::Other,
         });
     }
 
     fn osc_dispatch(&mut self, params: &[&[u8]], bell_terminated: bool) {
-        let msg = format!(
+        trace!(
             "[osc_dispatch] params={:?} bell_terminated={}",
             params, bell_terminated
         );
-        // debug!("{}", &msg);
         let mut buf = vec![];
         mem::swap(&mut self.buffer, &mut buf);
         self.token = Some(PtyOutputToken {
@@ -151,16 +131,14 @@ impl Perform for TokenBuffer {
                 params: params.iter().map(|&p| p.to_vec()).collect(),
                 bell_terminated,
             },
-            // action: msg,
         });
     }
 
     fn csi_dispatch(&mut self, params: &Params, intermediates: &[u8], ignore: bool, c: char) {
-        let msg = format!(
+        trace!(
             "[csi_dispatch] params={:?} intermediates={:?}, ignore={:?}, char={:?}",
             params, intermediates, ignore, c
         );
-        // debug!("{}", &msg);
         let mut buf = vec![];
         mem::swap(&mut self.buffer, &mut buf);
         self.token = Some(PtyOutputToken {
@@ -171,26 +149,23 @@ impl Perform for TokenBuffer {
                 ignore,
                 c,
             },
-            // action: msg,
         });
     }
 
     fn esc_dispatch(&mut self, intermediates: &[u8], ignore: bool, byte: u8) {
-        let msg = format!(
+        trace!(
             "[esc_dispatch] intermediates={:?}, ignore={:?}, byte={:02x}",
             intermediates, ignore, byte
         );
-        // debug!("{}", &msg);
         let mut buf = vec![];
         mem::swap(&mut self.buffer, &mut buf);
         self.token = Some(PtyOutputToken {
             buf,
             mean: VTEEvent::Print,
-            // action: msg,
         });
     }
     fn terminated(&self) -> bool {
-        debug!("[terminated]");
+        trace!("[terminated]");
         false
     }
 }
@@ -222,7 +197,7 @@ impl PtyBuffer {
         PtyBuffer::default()
     }
     async fn start_pty_buffer(
-        mut event_tx: UnboundedSender<event::Event>,
+        event_tx: UnboundedSender<event::Event>,
         mut action_rx: UnboundedReceiver<action::Action>,
     ) -> Result<()> {
         let mut token_buffer = TokenBuffer::new();

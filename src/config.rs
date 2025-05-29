@@ -1,12 +1,11 @@
 #![allow(dead_code)] // Remove this once you start using the code
 
-use std::{collections::HashMap, env, path::PathBuf};
+use std::{env, path::PathBuf};
 
 use color_eyre::Result;
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use directories::ProjectDirs;
 use lazy_static::lazy_static;
-use serde::{Deserialize, de::Deserializer};
+use serde::Deserialize;
 use tracing::error;
 
 const CONFIG: &str = include_str!("../.config/config.json5");
@@ -27,7 +26,7 @@ pub struct Config {
 
 lazy_static! {
     pub static ref PROJECT_NAME: String = env!("CARGO_CRATE_NAME").to_uppercase().to_string();
-    pub static ref BIN_NAME: String = env!("CARGO_BIN_NAME").to_uppercase().to_string();
+    // pub static ref BIN_NAME: String = env!("CARGO_BIN_NAME").to_uppercase().to_string();
     pub static ref DATA_FOLDER: Option<PathBuf> =
         env::var(format!("{}_DATA", PROJECT_NAME.clone()))
             .ok()
@@ -40,7 +39,7 @@ lazy_static! {
 
 impl Config {
     pub fn new() -> Result<Self, config::ConfigError> {
-        let default_config: Config = json5::from_str(CONFIG).unwrap();
+        // let default_config: Config = json5::from_str(CONFIG).unwrap();
         let data_dir = get_data_dir();
         let config_dir = get_config_dir();
         let mut builder = config::Config::builder()
@@ -67,9 +66,7 @@ impl Config {
         if !found_config {
             error!("No configuration file found. Application may not behave as expected");
         }
-
-        let mut cfg: Self = builder.build()?.try_deserialize()?;
-
+        let cfg: Self = builder.build()?.try_deserialize()?;
         Ok(cfg)
     }
 }

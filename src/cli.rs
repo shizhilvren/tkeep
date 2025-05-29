@@ -44,7 +44,7 @@ pub struct ServerCli {
     pub name: String,
 
     /// Set which gdb debugger to use.
-    #[arg(short('s'), long, value_name = "SHELL", default_value_t = String::from("bash"), value_parser = gdb_check)]
+    #[arg(short('s'), long, value_name = "SHELL", default_value_t = String::from("bash"), value_parser = shell_check)]
     pub shell: String,
 
     /// Args will pass to gdb append "--args", if you pass "--args <some options>" to this command, it will pass same one to gdb. Note: it cannoot use with "--"
@@ -94,20 +94,18 @@ Data directory: {data_dir_path}"
     )
 }
 
-fn gdb_check(s: &str) -> Result<String, String> {
-    // let gdb = which::which(s).map_err(|e| e.to_string())?;
-    // let gdb = gdb
-    //     .into_os_string()
-    //     .into_string()
-    //     .map_err(|e| e.to_str().expect("gdb path error").to_string())?;
-
-    Ok("bash".to_string())
+fn shell_check(s: &str) -> Result<String, String> {
+    let shell = which::which(s).map_err(|e| e.to_string())?;
+    let shell = shell.into_os_string().into_string().map_err(|e| {
+        e.to_str()
+            .expect(format!("{} path error", &s).as_str())
+            .to_string()
+    })?;
+    Ok(shell)
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::cli::Cli;
-    use clap::Parser;
     #[test]
     fn test_args() {
         // let cli = Cli::try_parse_from(["rgdb", "-d", "gdb"]).unwrap();

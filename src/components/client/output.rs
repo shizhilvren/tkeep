@@ -1,17 +1,16 @@
-use std::io::Write;
-
 use super::super::Component;
+#[allow(unused_imports)]
 use crate::action::Action::Clinet as c_action_e;
+#[allow(unused_imports)]
 use crate::action::client::Action as c_action;
 use crate::event::Event::Client as c_event_e;
 use crate::event::client::Event as c_event;
-use crate::{action, event, tool};
+use crate::{action, event};
 use color_eyre::{Result, eyre::eyre};
-use crossterm::{Command, execute};
+use crossterm::execute;
 use serde::{Deserialize, Serialize};
+use std::io::Write;
 use strum::Display;
-use tokio::io::AsyncReadExt;
-use tokio::net::UnixStream;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tracing::error;
 
@@ -49,7 +48,7 @@ impl Component for Output {
     }
 
     fn handle_events(&mut self, event: &event::Event) -> Result<Vec<action::Action>> {
-        let mut ret = vec![];
+        let ret = vec![];
         let mut out = std::io::stdout();
         match event {
             c_event_e(c_event::Output(Event::PtyOut(data))) => {

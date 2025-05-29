@@ -7,13 +7,12 @@ use crate::event::client::Event as c_event;
 use crate::{action, event, tool};
 use color_eyre::{Result, eyre::eyre};
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 use strum::Display;
 use tokio::io::AsyncReadExt;
 use tokio::select;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio_stream::StreamExt;
+#[allow(unused_imports)]
 use tracing::{debug, error};
 
 #[derive(Debug, Clone, PartialEq, Eq, Display, Serialize, Deserialize)]
@@ -37,24 +36,9 @@ impl Input {
         Input::default()
     }
     async fn start_input_loop(
-        mut event_tx: UnboundedSender<event::Event>,
-        mut action_rx: UnboundedReceiver<action::Action>,
+        event_tx: UnboundedSender<event::Event>,
+        _action_rx: UnboundedReceiver<action::Action>,
     ) -> Result<()> {
-        let handle_tty_event = async |event: crossterm::event::Event,
-                                      sander: &mut UnboundedSender<event::Event>|
-               -> Result<()> {
-            match event {
-                crossterm::event::Event::Resize(w, h) => {
-                    sander.send(c_event_e(c_event::Input(Event::Resize {
-                        width: w,
-                        height: h,
-                    })))?;
-                }
-                _ => {}
-            }
-            Ok(())
-        };
-        // execute!(std::io::stdout(), crossterm::event::EnableMouseCapture)?;
         match crossterm::terminal::enable_raw_mode() {
             Ok(()) => {
                 let mut resize_signals =

@@ -1,4 +1,3 @@
-use serde::{Deserialize, Serialize};
 use strum::Display;
 #[derive(Debug, Clone, PartialEq, Eq, Display)]
 pub enum Action {
@@ -12,7 +11,6 @@ pub mod server {
 
     #[derive(Debug, Clone, PartialEq, Eq, Display)]
     pub enum Action {
-        ServerStart,
         Pty(pty::Action),
         PtyBuffer(pty_buffer::Action),
         Worker(worker::Action),

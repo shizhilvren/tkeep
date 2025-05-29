@@ -8,13 +8,16 @@ description = "TKEEP is a session keep tool"
 
 
 [[bin]]
-name = "tserver"
-path = "src/tserver.rs"
+name = "tclient"
+path = "src/bin/tclient.rs"
 
 [[bin]]
-name = "tclient"
-path = "src/tclient.rs"
+name = "tserver"
+path = "src/bin/tserver.rs"
 
+[[bin]]
+name = "tkeep"
+path = "src/main.rs"
 
 [dependencies]
 better-panic = "0.3.0"
@@ -52,6 +55,7 @@ tracing = "0.1.40"
 tracing-error = "0.2.0"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter", "serde"] }
 vte = { version = "0.15.0", features = ["ansi"] }
+which = "7.0.3"
 
 [build-dependencies]
 anyhow = "1.0.90"

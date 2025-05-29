@@ -1,9 +1,4 @@
-use std::collections::HashMap;
-
-use crate::components::{
-    self,
-    server::{client_listener, pty, pty_buffer, worker},
-};
+use crate::components::server::{client_listener, pty, pty_buffer, worker};
 use crate::event::Event::Server as s_event_e;
 use crate::event::server::Event as s_event;
 use crate::{
@@ -13,9 +8,11 @@ use crate::{
     event,
 };
 use color_eyre::Result;
+use std::collections::HashMap;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::task::JoinHandle;
+#[allow(unused_imports)]
 use tracing::{debug, error, info};
 
 pub struct AppServer {
@@ -131,10 +128,6 @@ impl AppServer {
         };
 
         Ok(next)
-    }
-
-    fn handle_actions(&mut self, action: action::Action) -> Result<()> {
-        Ok(())
     }
 
     fn init(&self) -> Result<()> {

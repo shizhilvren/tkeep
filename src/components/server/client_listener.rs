@@ -1,19 +1,19 @@
 use super::super::Component;
+#[allow(unused_imports)]
 use crate::action::Action::Server as s_action_e;
+#[allow(unused_imports)]
 use crate::action::server::Action as s_action;
 use crate::event::Event::Server as s_event_e;
 use crate::event::server::Event as s_event;
 use crate::{action, event};
 use bincode::{Decode, Encode};
-use bytes::buf;
 use color_eyre::{Result, eyre::eyre};
 use std::path::PathBuf;
-use std::str::from_utf8;
-use std::{option::Option, str::FromStr};
+use std::{option::Option};
 use strum::Display;
-use tokio::io::AsyncReadExt;
 use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+#[allow(unused_imports)]
 use tracing::{debug, error};
 
 #[derive(Debug, Clone, PartialEq, Eq, Display, Encode, Decode)]

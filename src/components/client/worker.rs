@@ -15,6 +15,7 @@ use strum::Display;
 use tokio::net::UnixStream;
 use tokio::select;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+#[allow(unused_imports)]
 use tracing::{debug, error};
 
 #[derive(Debug, Clone, PartialEq, Eq, Display, Serialize, Deserialize)]

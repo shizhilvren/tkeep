@@ -6,10 +6,9 @@ use crate::event::server::Event as s_event;
 use crate::tool;
 use crate::{action, event};
 use color_eyre::{Result, eyre::eyre};
-use portable_pty::{Child, CommandBuilder, PtySize, native_pty_system};
+use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 use serde::{Deserialize, Serialize};
 use std::os::fd::FromRawFd;
-use std::str::from_utf8;
 use std::{option::Option, str::FromStr};
 use strum::Display;
 use tokio::io::AsyncReadExt;
@@ -41,7 +40,7 @@ impl Pty {
     }
     async fn handle_action(
         action: Option<action::Action>,
-        event_tx: &UnboundedSender<event::Event>,
+        _event_tx: &UnboundedSender<event::Event>,
         tty_in: &mut Box<dyn std::io::Write + Send + 'static>,
         pty_pair: &mut portable_pty::PtyPair,
     ) -> Result<()> {
@@ -123,7 +122,7 @@ impl Pty {
         let mut cmd = CommandBuilder::from_argv(args);
         cmd.cwd(cwd);
         debug!("gdb tty start cwd id {:?}", &cmd.get_cwd());
-        let child = pair
+        let _child = pair
             .slave
             .spawn_command(cmd)
             .map_err(|e| eyre!(format!("{:?}", e)))?;
