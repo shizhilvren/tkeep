@@ -29,7 +29,7 @@ pub enum Action {
 
 #[derive(Debug, Clone, PartialEq, Eq, Display)]
 pub enum Event {
-    BufferToken(PtyOutputToken),
+    BufferTokens(Vec<PtyOutputToken>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -230,13 +230,12 @@ impl PtyBuffer {
             let action = action_rx.recv().await.ok_or(eyre!("action not get"))?;
             match action {
                 s_action_e(s_action::PtyBuffer(Action::BufferIn(data))) => {
-                    let tokens = token_buffer.advance(&data);
-                    for token in tokens {
-                        if !token.mean.is_query() {
-                            event_tx
-                                .send(s_event_e(s_event::PtyBuffer(Event::BufferToken(token))))?;
-                        }
-                    }
+                    let tokens = token_buffer
+                        .advance(&data)
+                        .into_iter()
+                        .filter(|token| !token.mean.is_query())
+                        .collect();
+                    event_tx.send(s_event_e(s_event::PtyBuffer(Event::BufferTokens(tokens))))?;
                 }
                 _ => {}
             }
@@ -275,14 +274,17 @@ impl Component for PtyBuffer {
                     data.clone(),
                 ))));
             }
-            s_event_e(s_event::PtyBuffer(Event::BufferToken(token))) => {
+            s_event_e(s_event::PtyBuffer(Event::BufferTokens(tokens))) => {
                 trace!(
                     "buffer size {} MB",
                     self.output_buf.len() as f64 * size_of::<u8>() as f64 / 4_f64 / 1024_f64
                 );
-                token.buf.iter().for_each(|e| {
-                    self.output_buf.push_back(e.clone());
-                });
+                let mut buf = tokens
+                    .into_iter()
+                    .map(|token| token.buf.clone())
+                    .flatten()
+                    .collect::<VecDeque<_>>();
+                self.output_buf.append(&mut buf);
             }
             s_event_e(s_event::Worker(worker::Event::Replay(pid))) => {
                 ret.push(s_action_e(s_action::PtyBuffer(Action::ReplayData((
