@@ -18,7 +18,7 @@ async fn main() -> Result<()> {
     crate::logging::init()?;
     println!("Hello, world!");
     debug!("this is a debug message");
-    let mut app = crate::app_server::AppServer::new()?;
+    let mut app = crate::app_server::AppServer::new("test".to_string())?;
     app.run().await?;
     Ok(())
 }
