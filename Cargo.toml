@@ -2,6 +2,10 @@
 name = "tkeep"
 version = "0.1.0"
 edition = "2024"
+build = "build.rs"
+default-run = "tkeep"
+description = "TKEEP is a session keep tool"
+
 
 [[bin]]
 name = "tserver"
@@ -10,6 +14,7 @@ path = "src/tserver.rs"
 [[bin]]
 name = "tclient"
 path = "src/tclient.rs"
+
 
 [dependencies]
 better-panic = "0.3.0"
@@ -42,8 +47,11 @@ strip-ansi-escapes = "0.2.0"
 strum = { version = "0.27.1", features = ["derive"] }
 tokio = { version = "1.40.0", features = ["full"] }
 tokio-stream = "0.1.17"
-tokio-util = { version = "0.7.15", features = ["codec"] }
 tracing = "0.1.40"
 tracing-error = "0.2.0"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter", "serde"] }
 vte = { version = "0.15.0", features = ["ansi"] }
+
+[build-dependencies]
+anyhow = "1.0.90"
+vergen-gix = { version = "1.0.2", features = ["build", "cargo"] }

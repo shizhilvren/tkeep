@@ -19,6 +19,7 @@ use tokio::task::JoinHandle;
 use tracing::{debug, error, info};
 
 pub struct AppServer {
+    name: String,
     config: Config,
     components: HashMap<
         PID,
@@ -37,17 +38,18 @@ use crate::app_server;
 pub enum Event {
     StartPty,
     StartPtyBuffer,
-    StartClinetListener,
+    StartClinetListener(String),
 }
 
 impl AppServer {
-    pub fn new() -> Result<Self> {
+    pub fn new(name: String) -> Result<Self> {
         let (event_tx, event_rx) = mpsc::unbounded_channel();
         Ok(Self {
             components: HashMap::new(),
             event_tx,
             event_rx,
             config: Config::new()?,
+            name,
         })
     }
 
@@ -66,9 +68,11 @@ impl AppServer {
                                 match actions {
                                     Ok(actions) => acc.extend(actions),
                                     Err(e) => {
-                                        error!("Failed to handle event {:?} in component {:?}: {}", event, id, e);
+                                        error!(
+                                            "Failed to handle event {:?} in component {:?}: {}",
+                                            event, id, e
+                                        );
                                     }
-                                    
                                 }
                                 acc
                             },
@@ -109,9 +113,9 @@ impl AppServer {
                 self.add_component(Box::new(pty::Pty::new()))?;
                 None
             }
-            s_event_e(s_event::App(app_server::Event::StartClinetListener)) => {
+            s_event_e(s_event::App(app_server::Event::StartClinetListener(name))) => {
                 debug!("Received StartClinetListener event");
-                self.add_component(Box::new(client_listener::ClinetListener::new()))?;
+                self.add_component(Box::new(client_listener::ClinetListener::new(name)))?;
                 None
             }
             s_event_e(s_event::App(app_server::Event::StartPtyBuffer)) => {
@@ -139,7 +143,7 @@ impl AppServer {
         self.event_tx
             .send(s_event_e(s_event::App(app_server::Event::StartPtyBuffer)))?;
         self.event_tx.send(s_event_e(s_event::App(
-            app_server::Event::StartClinetListener,
+            app_server::Event::StartClinetListener(self.name.clone()),
         )))?;
         debug!("Sent StartPty event");
         Ok(())

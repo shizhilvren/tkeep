@@ -3,9 +3,9 @@ use std::collections::HashMap;
 use crate::action;
 use crate::action::Action::Clinet as c_action_e;
 use crate::action::client::Action as c_action;
-use crate::components::client::output;
 use crate::components::Component;
 use crate::components::client::input;
+use crate::components::client::output;
 use crate::components::client::worker;
 use crate::config;
 use crate::event;
@@ -30,22 +30,23 @@ pub struct AppClient {
     >,
     event_tx: mpsc::UnboundedSender<event::Event>,
     event_rx: mpsc::UnboundedReceiver<event::Event>,
+    name: String,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Event {
     StartPty,
-    StartClinetListener,
 }
 
 impl AppClient {
-    pub fn new() -> Result<Self> {
+    pub fn new(name: String) -> Result<Self> {
         let (event_tx, event_rx) = mpsc::unbounded_channel();
         Ok(Self {
             components: HashMap::new(),
             event_tx,
             event_rx,
             config: Config::new()?,
+            name,
         })
     }
 
@@ -64,7 +65,10 @@ impl AppClient {
                                 match actions {
                                     Ok(actions) => acc.extend(actions),
                                     Err(e) => {
-                                        error!("Failed to handle event {:?} in component {}: {}", event, id, e);
+                                        error!(
+                                            "Failed to handle event {:?} in component {}: {}",
+                                            event, id, e
+                                        );
                                     }
                                 }
                                 acc
@@ -73,8 +77,9 @@ impl AppClient {
 
                         actions.iter().for_each(|action| {
                             debug!("Received action {:?}", action);
-                            self.components.iter_mut().for_each(
-                                 |(id, (sander, _, component))| {
+                            self.components
+                                .iter_mut()
+                                .for_each(|(id, (sander, _, component))| {
                                     match (sander, component.action_filter(action)) {
                                         (Some(sander), true) => match sander.send(action.clone()) {
                                             Err(e) => error!(
@@ -85,8 +90,7 @@ impl AppClient {
                                         },
                                         _ => {}
                                     };
-                                },
-                            );
+                                });
                         });
                     }
                 }
@@ -106,8 +110,8 @@ impl AppClient {
                 self.add_component(Box::new(output::Output::new()))?;
                 None
             }
-            c_event_e(c_event::Worker(worker::Event::Start)) => {
-                self.add_component(Box::new(worker::Worker::new()))?;
+            c_event_e(c_event::Worker(worker::Event::Start(name))) => {
+                self.add_component(Box::new(worker::Worker::new(name)))?;
                 None
             }
             _ => Some(event),
@@ -122,7 +126,9 @@ impl AppClient {
     fn init(&self) -> Result<()> {
         debug!("start client");
         self.event_tx
-            .send(c_event_e(c_event::Worker(worker::Event::Start)))?;
+            .send(c_event_e(c_event::Worker(worker::Event::Start(
+                self.name.clone(),
+            ))))?;
         self.event_tx
             .send(c_event_e(c_event::Input(input::Event::Start)))?;
         Ok(())

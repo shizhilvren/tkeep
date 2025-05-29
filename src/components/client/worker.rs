@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use super::super::Component;
 use super::input;
 use crate::action::Action::Clinet as c_action_e;
@@ -23,22 +25,28 @@ pub enum Action {
 
 #[derive(Debug, Clone, PartialEq, Eq, Display, Serialize, Deserialize)]
 pub enum Event {
-    Start,
+    Start(String),
 }
 
 #[derive(Debug, Default)]
 pub struct Worker {
     event_tx: Option<UnboundedSender<event::Event>>,
     action_rx: Option<UnboundedReceiver<action::Action>>,
+    name: String,
 }
 
 impl Worker {
-    pub fn new() -> Self {
-        Worker::default()
+    pub fn new(name: String) -> Self {
+        Self {
+            event_tx: None,
+            action_rx: None,
+            name,
+        }
     }
     async fn start_player(
         event_tx: UnboundedSender<event::Event>,
         mut action_rx: UnboundedReceiver<action::Action>,
+        name: String,
     ) -> Result<()> {
         let handle_action =
             async |action: Option<action::Action>, uds: &mut UnixStream| -> Result<()> {
@@ -56,7 +64,8 @@ impl Worker {
                 }
                 Ok(())
             };
-        let mut uds = UnixStream::connect("/tmp/stream.sock").await?;
+        let socket_path = PathBuf::from(format!("/tmp/{}.tkeep.sock", name));
+        let mut uds = UnixStream::connect(socket_path).await?;
         let mut msg_receive = tool::unix_socket::MessageReader::new();
         loop {
             select! {
@@ -95,7 +104,7 @@ impl Component for Worker {
         let action_tx = self.action_rx.take();
         match (event_rx, action_tx) {
             (Some(event_rx), Some(action_tx)) => {
-                let task = Self::start_player(event_rx, action_tx);
+                let task = Self::start_player(event_rx, action_tx, self.name.clone());
                 let handle = tokio::spawn(task);
                 Ok(Some(handle))
             }

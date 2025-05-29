@@ -7,6 +7,7 @@ use crate::{action, event};
 use bincode::{Decode, Encode};
 use bytes::buf;
 use color_eyre::{Result, eyre::eyre};
+use std::path::PathBuf;
 use std::str::from_utf8;
 use std::{option::Option, str::FromStr};
 use strum::Display;
@@ -26,23 +27,29 @@ pub enum Event {
 pub struct ClinetListener {
     event_tx: Option<UnboundedSender<event::Event>>,
     action_rx: Option<UnboundedReceiver<action::Action>>,
+    name: String,
 }
 
 impl ClinetListener {
-    pub fn new() -> Self {
-        ClinetListener::default()
+    pub fn new(name: String) -> Self {
+        Self {
+            event_tx: None,
+            action_rx: None,
+            name,
+        }
     }
     async fn start_listen(
         event_tx: UnboundedSender<event::Event>,
         action_rx: UnboundedReceiver<action::Action>,
+        name: String,
     ) -> Result<()> {
-        let mut action_rx = action_rx;
+        let _action_rx = action_rx;
         let event_tx = event_tx;
-        let path = "/tmp/stream.sock";
-        let _ = std::fs::remove_file(path);
-        let listener = UnixListener::bind(path)?;
+        let path = PathBuf::from(format!("/tmp/{}.tkeep.sock", name));
+        let _ = std::fs::remove_file(&path);
+        let listener = UnixListener::bind(&path)?;
         loop {
-            let (mut stream, addr) = listener.accept().await?;
+            let (stream, addr) = listener.accept().await?;
             event_tx.send(s_event_e(s_event::ClinetListener(Event::NewClient(stream))))?;
             debug!("New client connected: {:?}", addr);
         }
@@ -64,7 +71,7 @@ impl Component for ClinetListener {
         let action_tx = self.action_rx.take();
         match (event_rx, action_tx) {
             (Some(event_rx), Some(action_tx)) => {
-                let task = Self::start_listen(event_rx, action_tx);
+                let task = Self::start_listen(event_rx, action_tx, self.name.clone());
                 let handle = tokio::spawn(task);
                 Ok(Some(handle))
             }
