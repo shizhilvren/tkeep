@@ -6,23 +6,27 @@ use crate::event::server::Event as s_event;
 use crate::tool;
 use crate::{action, event};
 use color_eyre::{Result, eyre::eyre};
-use portable_pty::{CommandBuilder, PtySize, native_pty_system};
+use portable_pty::{CommandBuilder, ExitStatus, PtySize, native_pty_system};
 use serde::{Deserialize, Serialize};
 use std::os::fd::FromRawFd;
 use std::{option::Option, str::FromStr};
 use strum::Display;
 use tokio::io::AsyncReadExt;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use tokio::task::JoinHandle;
+use tokio::time::{Duration, sleep};
 use tracing::{debug, error};
 
 #[derive(Debug, Clone, PartialEq, Eq, Display, Serialize, Deserialize)]
 pub enum Action {
+    PtyFinish,
     PtyIn(Vec<u8>),
     Resize { width: u16, height: u16 },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Display, Serialize, Deserialize)]
+#[derive(Debug, Clone, Display)]
 pub enum Event {
+    PtyFinish(ExitStatus),
     PtyOut(Vec<u8>),
     PtyIn(Vec<u8>),
     Resize { width: u16, height: u16 },
@@ -43,7 +47,7 @@ impl Pty {
         _event_tx: &UnboundedSender<event::Event>,
         tty_in: &mut Box<dyn std::io::Write + Send + 'static>,
         pty_pair: &mut portable_pty::PtyPair,
-    ) -> Result<()> {
+    ) -> Result<bool> {
         match action {
             Some(action) => match action {
                 s_action_e(s_action::Pty(self::Action::PtyIn(data))) => {
@@ -63,6 +67,9 @@ impl Pty {
                         })
                         .map_err(|e| eyre!("Failed to resize pty: {:?}", e))?;
                 }
+                s_action_e(s_action::Pty(Action::PtyFinish)) => {
+                    return Ok(true);
+                }
                 _ => {}
             },
             None => {
@@ -70,7 +77,7 @@ impl Pty {
                 return Err(eyre!("Failed to receive action"));
             }
         }
-        Ok(())
+        Ok(false)
     }
     async fn handle_output(
         event_tx: &mut UnboundedSender<event::Event>,
@@ -93,6 +100,31 @@ impl Pty {
         }
         Ok(())
     }
+    fn await_child_stop(
+        mut child: Box<dyn portable_pty::Child + Send + Sync + 'static>,
+        event_tx: UnboundedSender<event::Event>,
+    ) -> JoinHandle<Result<()>> {
+        use color_eyre::eyre::ErrReport;
+
+        let handle = tokio::spawn(async move {
+            loop {
+                let status = child.try_wait()?;
+                match status {
+                    Some(status) => {
+                        event_tx.send(s_event_e(s_event::Pty(Event::PtyFinish(status))))?;
+                        break;
+                    }
+                    None => {
+                        sleep(Duration::from_micros(1)).await;
+                    }
+                }
+            }
+            debug!("waiting tty finish");
+            Ok::<_, ErrReport>(())
+        });
+        handle
+    }
+
     async fn start_pty(
         mut event_tx: UnboundedSender<event::Event>,
         mut action_rx: UnboundedReceiver<action::Action>,
@@ -122,7 +154,7 @@ impl Pty {
         let mut cmd = CommandBuilder::from_argv(args);
         cmd.cwd(cwd);
         debug!("gdb tty start cwd id {:?}", &cmd.get_cwd());
-        let _child = pair
+        let child = pair
             .slave
             .spawn_command(cmd)
             .map_err(|e| eyre!(format!("{:?}", e)))?;
@@ -146,10 +178,14 @@ impl Pty {
             .map_err(|e| eyre!(format!("{:?}", e)))?;
 
         let mut buf = [0_u8; tool::BUF_SIZE];
+        let _child_status = Self::await_child_stop(child, event_tx.clone());
         loop {
             tokio::select! {
                 action = action_rx.recv() => {
-                    Self::handle_action(action, &event_tx, &mut tty_in, &mut pair).await?;
+                    let break_flag = Self::handle_action(action, &event_tx, &mut tty_in, &mut pair).await?;
+                    if break_flag{
+                        break;
+                    }
                 },
                 output = tty_out.read(&mut buf) => {
                     Self::handle_output(&mut event_tx, output, &buf).await?;
@@ -193,6 +229,9 @@ impl Component for Pty {
                     width: *width,
                     height: *height,
                 })));
+            }
+            s_event_e(s_event::Pty(Event::PtyFinish(s))) => {
+                ret.push(s_action_e(s_action::Pty(Action::PtyFinish)));
             }
             _ => {}
         };

@@ -8,6 +8,7 @@ use crate::{
     event,
 };
 use color_eyre::Result;
+use color_eyre::eyre::eyre;
 use std::collections::HashMap;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::UnboundedSender;
@@ -123,7 +124,10 @@ impl AppServer {
                 self.add_component(Box::new(worker::Worker::new(stream)))?;
                 None
             }
-
+            s_event_e(s_event::Worker(worker::Event::Stop(pid))) => {
+                self.remove_component_by_id(&pid)?;
+                None
+            }
             _ => Some(event),
         };
 
@@ -148,6 +152,13 @@ impl AppServer {
             id += 1;
         }
         PID(id)
+    }
+
+    fn remove_component_by_id(&mut self, pid: &PID) -> Result<()> {
+        self.components
+            .remove_entry(pid)
+            .ok_or(eyre!("remove worker PID {:?}", &pid))?;
+        Ok(())
     }
 
     fn add_component(&mut self, component: Box<dyn Component>) -> Result<PID> {

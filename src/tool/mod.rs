@@ -7,7 +7,7 @@ pub mod unix_socket {
     use std::fmt::Debug;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::UnixStream;
-    use tracing::debug;
+    use tracing::{debug, trace};
 
     #[derive(Debug)]
     pub struct MessageReader {
@@ -33,6 +33,10 @@ pub mod unix_socket {
                 None => {
                     while self.buf.len() < SIZE_OF_U64 {
                         let n = uds.read(&mut buf).await?;
+                        if n == 0 {
+                            return Err(eyre!("uds was colse"));
+                        }
+                        trace!("get {} bytes from uds,", &n);
                         self.buf.extend_from_slice(&buf[..n]);
                     }
                     let len = self.buf.get_u64_le();
@@ -43,6 +47,9 @@ pub mod unix_socket {
             let len = len as usize;
             while self.buf.len() < len {
                 let n = uds.read(&mut buf).await?;
+                if n == 0 {
+                    return Err(eyre!("uds was colse"));
+                }
                 self.buf.extend_from_slice(&buf[..n]);
             }
             let data = &self.buf[0..len];
@@ -80,4 +87,3 @@ pub mod unix_socket {
         Ok(())
     }
 }
-

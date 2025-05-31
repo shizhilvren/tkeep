@@ -15,6 +15,7 @@ use strum::Display;
 use tokio::net::UnixStream;
 use tokio::select;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use tracing::warn;
 #[allow(unused_imports)]
 use tracing::{debug, error};
 
@@ -26,6 +27,7 @@ pub enum Action {
 
 pub enum Event {
     Replay(PID),
+    Stop(PID),
 }
 
 #[derive(Debug, Default)]
@@ -92,18 +94,28 @@ impl Worker {
                     handle_action(action,&mut uds).await?;
                 },
                 data = msg_receive.receive_message::<Msg>(&mut uds) => {
-                    match data? {
-                        Msg::PtyIn(data) => {
-                            event_tx.send(s_event_e(s_event::Pty(pty::Event::PtyIn(data))))?;
+                    match data {
+                        Ok(data) =>{
+                            match data {
+                                Msg::PtyIn(data) => {
+                                    event_tx.send(s_event_e(s_event::Pty(pty::Event::PtyIn(data))))?;
+                                }
+                                Msg::Resize { width, height } => {
+                                    event_tx.send(s_event_e(s_event::Pty(pty::Event::Resize { width, height })))?;
+                                }
+                                _ => {}
+                            }
+                        },
+                        Err(e) => {
+                            warn!("worker {:?} stopped, reason {:?}", &pid, e);
+                            event_tx.send(s_event_e(s_event::Worker(Event::Stop(pid.clone()))))?;
+                            break;
                         }
-                        Msg::Resize { width, height } => {
-                            event_tx.send(s_event_e(s_event::Pty(pty::Event::Resize { width, height })))?;
-                        }
-                        _ => {}
                     }
                 }
             }
         }
+        debug!("worker {:?} finish.", &pid);
         Ok(())
     }
 }
