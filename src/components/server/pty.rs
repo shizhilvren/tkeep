@@ -8,7 +8,6 @@ use crate::{action, event};
 use color_eyre::{Result, eyre::eyre};
 use portable_pty::{CommandBuilder, ExitStatus, PtySize, native_pty_system};
 use serde::{Deserialize, Serialize};
-use std::os::fd::FromRawFd;
 use std::{option::Option, str::FromStr};
 use strum::Display;
 use tokio::io::AsyncReadExt;
@@ -159,17 +158,17 @@ impl Pty {
             .spawn_command(cmd)
             .map_err(|e| eyre!(format!("{:?}", e)))?;
 
-        // // Read and parse output from the pty with reader
-        // let tty_out = pair
-        //     .master
-        //     .try_clone_reader()
-        //     .map_err(|e| eyre!(format!("{:?}", e)))?;
-
-        let mut tty_out = pair
+        let mut tty_out: tokio::fs::File = pair
             .master
             .as_raw_fd()
-            .map(|fd| unsafe { tokio::fs::File::from_raw_fd(fd) })
-            .ok_or(eyre!("Failed to get master fd"))?;
+            .map(|fd| {
+                let fd = unsafe { std::os::fd::BorrowedFd::borrow_raw(fd) };
+                fd.try_clone_to_owned().and_then(|fd| {
+                    let file = std::fs::File::from(fd);
+                    Ok(tokio::fs::File::from_std(file))
+                })
+            })
+            .ok_or(eyre!("Failed to get master fd"))??;
 
         // Send data to the pty by writing to the master
         let mut tty_in = pair
@@ -231,6 +230,7 @@ impl Component for Pty {
                 })));
             }
             s_event_e(s_event::Pty(Event::PtyFinish(s))) => {
+                debug!("pty finish as {:}", &s);
                 ret.push(s_action_e(s_action::Pty(Action::PtyFinish)));
             }
             _ => {}

@@ -60,7 +60,8 @@ impl Worker {
         event_tx.send(s_event_e(s_event::Worker(Event::Replay(pid.clone()))))?;
         let handle_action = async |action: Option<action::Action>,
                                    uds: &mut UnixStream|
-               -> Result<()> {
+               -> Result<bool> {
+            let mut ret = Ok(false);
             let action = action.ok_or(eyre!("Action is None"))?;
             match action {
                 s_action_e(s_action::Worker(Action::PtyOut((pid_s, data)))) => {
@@ -83,15 +84,20 @@ impl Worker {
                         }
                     }
                 }
+                s_action_e(s_action::Pty(pty::Action::PtyFinish)) => {
+                    ret = Ok(true);
+                }
                 _ => {}
             };
-            Ok(())
+            ret
         };
         let mut msg_receive = tool::unix_socket::MessageReader::new();
         loop {
             select! {
                 action = action_rx.recv() => {
-                    handle_action(action,&mut uds).await?;
+                   if handle_action(action, &mut uds).await?{
+                        break;
+                   }
                 },
                 data = msg_receive.receive_message::<Msg>(&mut uds) => {
                     match data {
@@ -171,17 +177,13 @@ impl Component for Worker {
     fn action_filter(&mut self, action: &action::Action) -> bool {
         match action {
             s_action_e(s_action::Worker(Action::PtyOut((pid, _)))) => {
-                if let Some(worker_pid) = self.pid.as_ref() {
-                    return pid == worker_pid;
-                }
+                self.pid.map_or(false, |pid_worker| *pid == pid_worker)
             }
             s_action_e(s_action::PtyBuffer(pty_buffer::Action::ReplayData((pid, _)))) => {
-                if let Some(worker_pid) = self.pid.as_ref() {
-                    return pid == worker_pid;
-                }
+                self.pid.map_or(false, |pid_worker| *pid == pid_worker)
             }
-            _ => {}
+            s_action_e(s_action::Pty(pty::Action::PtyFinish)) => true,
+            _ => false,
         }
-        false
     }
 }

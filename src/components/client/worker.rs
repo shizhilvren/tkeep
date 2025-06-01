@@ -128,4 +128,10 @@ impl Component for Worker {
         }
         Ok(ret)
     }
+    fn action_filter(&mut self, action: &action::Action) -> bool {
+        match action {
+            c_action_e(c_action::Worker(_)) => true,
+            _ => false,
+        }
+    }
 }

@@ -1,4 +1,5 @@
 use super::super::Component;
+use super::pty;
 #[allow(unused_imports)]
 use crate::action::Action::Server as s_action_e;
 #[allow(unused_imports)]
@@ -8,10 +9,11 @@ use crate::event::server::Event as s_event;
 use crate::{action, event};
 use bincode::{Decode, Encode};
 use color_eyre::{Result, eyre::eyre};
+use std::option::Option;
 use std::path::PathBuf;
-use std::{option::Option};
 use strum::Display;
 use tokio::net::{UnixListener, UnixStream};
+use tokio::select;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 #[allow(unused_imports)]
 use tracing::{debug, error};
@@ -38,21 +40,48 @@ impl ClinetListener {
             name,
         }
     }
+
+    async fn handle_action(
+        action: Option<action::Action>,
+        _event_tx: &UnboundedSender<event::Event>,
+    ) -> Result<bool> {
+        match action {
+            Some(action) => match action {
+                s_action_e(s_action::Pty(pty::Action::PtyFinish)) => Ok(true),
+                _ => Ok(false),
+            },
+            None => {
+                error!("Failed to receive action");
+                return Err(eyre!("Failed to receive action"));
+            }
+        }
+    }
+
     async fn start_listen(
         event_tx: UnboundedSender<event::Event>,
-        action_rx: UnboundedReceiver<action::Action>,
+        mut action_rx: UnboundedReceiver<action::Action>,
         name: String,
     ) -> Result<()> {
-        let _action_rx = action_rx;
         let event_tx = event_tx;
         let path = PathBuf::from(format!("/tmp/{}.tkeep.sock", name));
         let _ = std::fs::remove_file(&path);
         let listener = UnixListener::bind(&path)?;
         loop {
-            let (stream, addr) = listener.accept().await?;
-            event_tx.send(s_event_e(s_event::ClinetListener(Event::NewClient(stream))))?;
-            debug!("New client connected: {:?}", addr);
+            select! {
+                action = action_rx.recv() => {
+                    if Self::handle_action(action, &event_tx).await?{
+                        break;
+                    }
+                },
+                pair = listener.accept() => {
+                    let (stream, addr) = pair?;
+                    event_tx.send(s_event_e(s_event::ClinetListener(Event::NewClient(stream))))?;
+                    debug!("New client connected: {:?}", addr);
+                }
+            };
         }
+        debug!("client listen finish");
+        Ok(())
     }
 }
 
@@ -79,7 +108,9 @@ impl Component for ClinetListener {
         }
     }
     fn action_filter(&mut self, action: &action::Action) -> bool {
-        let _ = action;
-        false
+        match action {
+            s_action_e(s_action::Pty(pty::Action::PtyFinish)) => true,
+            _ => false,
+        }
     }
 }

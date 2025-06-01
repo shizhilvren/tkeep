@@ -212,9 +212,13 @@ impl PtyBuffer {
                         .collect();
                     event_tx.send(s_event_e(s_event::PtyBuffer(Event::BufferTokens(tokens))))?;
                 }
+                s_action_e(s_action::Pty(pty::Action::PtyFinish)) => {
+                    break;
+                }
                 _ => {}
             }
         }
+        debug!("pty buffer finish");
         Ok(())
     }
 }
@@ -278,6 +282,7 @@ impl Component for PtyBuffer {
     fn action_filter(&mut self, action: &action::Action) -> bool {
         match action {
             s_action_e(s_action::PtyBuffer(Action::BufferIn(_))) => true,
+            s_action_e(s_action::Pty(pty::Action::PtyFinish)) => true,
             _ => false,
         }
     }

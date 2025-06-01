@@ -44,6 +44,6 @@ pub trait Component {
     }
     fn action_filter(&mut self, action: &Action) -> bool {
         let _ = action; // to appease clippy
-        true
+        false
     }
 }

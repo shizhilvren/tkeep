@@ -58,7 +58,8 @@ impl AppServer {
             debug!("Received event: {:?}", event);
             match event {
                 Some(event) => {
-                    if let Some(event) = self.handle_events(event).await? {
+                    let (flag, event) = self.handle_events(event).await?;
+                    if let Some(event) = event {
                         let actions = self.components.iter_mut().fold(
                             vec![],
                             |mut acc, (id, (_, _, component))| {
@@ -94,6 +95,9 @@ impl AppServer {
                                 });
                         });
                     }
+                    if flag {
+                        break;
+                    }
                 }
                 None => {
                     error!("Failed to receive event");
@@ -101,34 +105,36 @@ impl AppServer {
                 }
             }
         }
+        debug!("server finish");
         Ok(())
     }
 
-    async fn handle_events(&mut self, event: event::Event) -> Result<Option<event::Event>> {
+    async fn handle_events(&mut self, event: event::Event) -> Result<(bool, Option<event::Event>)> {
         let next = match event {
             s_event_e(s_event::App(app_server::Event::StartPty)) => {
                 debug!("Received StartPty event");
                 self.add_component(Box::new(pty::Pty::new()))?;
-                None
+                (false, None)
             }
             s_event_e(s_event::App(app_server::Event::StartClinetListener(name))) => {
                 debug!("Received StartClinetListener event");
                 self.add_component(Box::new(client_listener::ClinetListener::new(name)))?;
-                None
+                (false, None)
             }
             s_event_e(s_event::App(app_server::Event::StartPtyBuffer)) => {
                 self.add_component(Box::new(pty_buffer::PtyBuffer::new()))?;
-                None
+                (false, None)
             }
             s_event_e(s_event::ClinetListener(client_listener::Event::NewClient(stream))) => {
                 self.add_component(Box::new(worker::Worker::new(stream)))?;
-                None
+                (false, None)
             }
             s_event_e(s_event::Worker(worker::Event::Stop(pid))) => {
                 self.remove_component_by_id(&pid)?;
-                None
+                (false, None)
             }
-            _ => Some(event),
+            s_event_e(s_event::Pty(pty::Event::PtyFinish(_))) => (true, Some(event)),
+            _ => (false, Some(event)),
         };
 
         Ok(next)
