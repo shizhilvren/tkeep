@@ -8,10 +8,12 @@ use crate::{action, event, tool};
 use color_eyre::{Result, eyre::eyre};
 use serde::{Deserialize, Serialize};
 use strum::Display;
+use termwiz::input::Modifiers;
 use tokio::io::AsyncReadExt;
 use tokio::select;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio_stream::StreamExt;
+use tracing::trace;
 #[allow(unused_imports)]
 use tracing::{debug, error};
 
@@ -31,26 +33,66 @@ pub struct Input {
     action_rx: Option<UnboundedReceiver<action::Action>>,
 }
 
+#[derive(Default)]
+struct InputEventParser {
+    imput_parser: termwiz::input::InputParser,
+}
+impl InputEventParser {
+    fn pasrse_as_vec(&mut self, bytes: &[u8]) -> Vec<event::Event> {
+        self.imput_parser
+            .parse_as_vec(bytes, false)
+            .iter()
+            .filter_map(Self::map_event)
+            .collect()
+    }
+    fn map_event(event: &termwiz::input::InputEvent) -> Option<event::Event> {
+        use termwiz::input::KeyCode;
+        use termwiz::input::KeyEvent;
+        trace!("input event {:?}", event);
+        match event {
+            termwiz::input::InputEvent::Key(KeyEvent { key, modifiers }) => {
+                match (key, modifiers) {
+                    (KeyCode::Char('d'), &Modifiers::ALT) => {
+                        Some(c_event_e(c_event::Worker(worker::Event::Stop)))
+                    }
+                    _ => None,
+                }
+            }
+            _ => None,
+        }
+    }
+}
+
 impl Input {
     pub fn new() -> Self {
         Input::default()
     }
+
     async fn start_input_loop(
         event_tx: UnboundedSender<event::Event>,
         mut action_rx: UnboundedReceiver<action::Action>,
     ) -> Result<()> {
         let is_raw_mode = crossterm::terminal::is_raw_mode_enabled()?;
+        let mut input_parser = InputEventParser::default();
         match crossterm::terminal::enable_raw_mode() {
             Ok(()) => {
                 let mut resize_signals =
                     signal_hook_tokio::Signals::new([signal_hook::consts::SIGWINCH])?;
-                let mut tty = tokio::fs::File::open("/dev/tty").await?;
+                let mut tty = tokio::fs::File::options()
+                    .write(false)
+                    .read(true)
+                    .open("/dev/tty")
+                    .await?;
                 let mut buf = [0_u8; tool::BUF_SIZE];
                 loop {
                     select! {
                         n = tty.read(&mut buf) => {
                             let n = n?;
-                            event_tx.send(c_event_e(c_event::Input(Event::PtyIn(buf[..n].to_vec()))))?;
+                            let buf = &buf[..n];
+                            event_tx.send(c_event_e(c_event::Input(Event::PtyIn(buf.to_vec()))))?;
+                            for event in input_parser.pasrse_as_vec(&buf[..n]){
+                                event_tx.send(event)?;
+                            }
                         }
                         resize = resize_signals.next() => {
                             match resize {

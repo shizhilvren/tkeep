@@ -105,6 +105,12 @@ impl AppServer {
                 }
             }
         }
+        for (id, (_, task, _)) in self.components.iter_mut() {
+            if let Some(task) = task {
+                task.await??;
+                debug!("{:?} is finish", id);
+            }
+        }
         debug!("server finish");
         Ok(())
     }

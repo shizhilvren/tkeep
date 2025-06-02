@@ -53,20 +53,23 @@ impl Worker {
         name: String,
     ) -> Result<()> {
         let handle_action =
-            async |action: Option<action::Action>, uds: &mut UnixStream| -> Result<()> {
+            async |action: Option<action::Action>, uds: &mut UnixStream| -> Result<bool> {
                 let action = action.ok_or(eyre!("Action is None"))?;
-                match action {
+                let ret = match action {
                     c_action_e(c_action::Worker(self::Action::PtyIn(data))) => {
                         let msg = Msg::PtyIn(data);
                         tool::unix_socket::send_message(uds, &msg).await?;
+                        false
                     }
                     c_action_e(c_action::Worker(self::Action::Resize { width, height })) => {
                         let msg = Msg::Resize { width, height };
                         tool::unix_socket::send_message(uds, &msg).await?;
+                        false
                     }
-                    _ => {}
-                }
-                Ok(())
+                    c_action_e(c_action::Worker(self::Action::Stop)) => true,
+                    _ => false,
+                };
+                Ok(ret)
             };
         let socket_path = PathBuf::from(format!("/tmp/{}.tkeep.sock", name));
         let uds = UnixStream::connect(socket_path).await;
@@ -83,7 +86,9 @@ impl Worker {
         loop {
             select! {
                 action = action_rx.recv() => {
-                    handle_action(action,&mut uds).await?;
+                    if handle_action(action,&mut uds).await? {
+                        break;
+                    }
                 },
                 data = msg_receive.receive_message::<Msg>(&mut uds) => {
                     match data {
@@ -101,7 +106,6 @@ impl Worker {
                         Err(e) => {
                             warn!("client worker stopped, reason {:?}", e);
                             event_tx.send(c_event_e(c_event::Worker(Event::Stop)))?;
-                            break;
                         }
                     }
                 }
@@ -155,8 +159,7 @@ impl Component for Worker {
     }
     fn action_filter(&mut self, action: &action::Action) -> bool {
         match action {
-            c_action_e(c_action::Worker(Action::PtyIn(_)))
-            | c_action_e(c_action::Worker(Action::Resize { .. })) => true,
+            c_action_e(c_action::Worker(_)) => true,
             _ => false,
         }
     }

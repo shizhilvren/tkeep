@@ -67,7 +67,7 @@ impl Component for Output {
                         crossterm::style::SetAttribute(crossterm::style::Attribute::Reset)
                     )?;
                     execute!(out, crossterm::terminal::LeaveAlternateScreen)?;
-                    // execute!(out, crossterm::terminal::EnableLineWrap)?;
+                    execute!(out, crossterm::terminal::EnableLineWrap)?;
                     execute!(out, crossterm::style::ResetColor)?;
                     execute!(out, crossterm::cursor::MoveTo(0, 0))?;
                     execute!(

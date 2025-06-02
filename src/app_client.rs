@@ -114,6 +114,8 @@ impl AppClient {
         }
 
         debug!("client finish");
+        std::process::exit(0);
+        #[allow(unreachable_code)]
         Ok(())
     }
 
