@@ -37,8 +37,9 @@ impl Input {
     }
     async fn start_input_loop(
         event_tx: UnboundedSender<event::Event>,
-        _action_rx: UnboundedReceiver<action::Action>,
+        mut action_rx: UnboundedReceiver<action::Action>,
     ) -> Result<()> {
+        let is_raw_mode = crossterm::terminal::is_raw_mode_enabled()?;
         match crossterm::terminal::enable_raw_mode() {
             Ok(()) => {
                 let mut resize_signals =
@@ -47,12 +48,11 @@ impl Input {
                 let mut buf = [0_u8; tool::BUF_SIZE];
                 loop {
                     select! {
-                         n = tty.read(&mut buf) => {
+                        n = tty.read(&mut buf) => {
                             let n = n?;
                             event_tx.send(c_event_e(c_event::Input(Event::PtyIn(buf[..n].to_vec()))))?;
-                         }
-
-                         resize = resize_signals.next() => {
+                        }
+                        resize = resize_signals.next() => {
                             match resize {
                                 Some(signal_hook::consts::SIGWINCH) => {
                                     let size = crossterm::terminal::size()?;
@@ -60,7 +60,16 @@ impl Input {
                                 }
                                 _ => {}
                             }
-                         }
+                        }
+                        action = action_rx.recv() => {
+                            let action = action.ok_or(eyre!("Action is None"))?;
+                            match action {
+                                c_action_e(c_action::Worker(worker::Action::Stop))=>{
+                                    break;
+                                },
+                                _ => {}
+                            }
+                        }
                     }
                 }
             }
@@ -68,6 +77,12 @@ impl Input {
                 error!("tty not change to raw model {:?}", e);
             }
         }
+        debug!("reset raw mode");
+        match is_raw_mode {
+            true => crossterm::terminal::enable_raw_mode()?,
+            false => crossterm::terminal::disable_raw_mode()?,
+        };
+        debug!("read tty finish");
         Ok(())
     }
 }
@@ -107,5 +122,11 @@ impl Component for Input {
             _ => {}
         };
         Ok(ret)
+    }
+    fn action_filter(&mut self, action: &action::Action) -> bool {
+        match action {
+            c_action_e(c_action::Worker(worker::Action::Stop)) => true,
+            _ => false,
+        }
     }
 }

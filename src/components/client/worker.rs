@@ -15,6 +15,7 @@ use strum::Display;
 use tokio::net::UnixStream;
 use tokio::select;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use tracing::warn;
 #[allow(unused_imports)]
 use tracing::{debug, error};
 
@@ -22,11 +23,13 @@ use tracing::{debug, error};
 pub enum Action {
     PtyIn(Vec<u8>),
     Resize { width: u16, height: u16 },
+    Stop,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Display, Serialize, Deserialize)]
 pub enum Event {
     Start(String),
+    Stop,
 }
 
 #[derive(Debug, Default)]
@@ -66,7 +69,16 @@ impl Worker {
                 Ok(())
             };
         let socket_path = PathBuf::from(format!("/tmp/{}.tkeep.sock", name));
-        let mut uds = UnixStream::connect(socket_path).await?;
+        let uds = UnixStream::connect(socket_path).await;
+        let mut uds = match uds {
+            Err(e) => {
+                event_tx.send(c_event_e(c_event::Worker(Event::Stop)))?;
+                error!("clinet fail: {:}", e);
+                Err(eyre!("cannot client server named '{}'.", &name))
+            }
+            Ok(uds) => Ok(uds),
+        }?;
+        event_tx.send(c_event_e(c_event::Input(input::Event::Start)))?;
         let mut msg_receive = tool::unix_socket::MessageReader::new();
         loop {
             select! {
@@ -74,18 +86,28 @@ impl Worker {
                     handle_action(action,&mut uds).await?;
                 },
                 data = msg_receive.receive_message::<Msg>(&mut uds) => {
-                    match data? {
-                        Msg::PtyOut(data) => {
-                            event_tx.send(c_event_e(c_event::Output(output::Event::PtyOut(data))))?;
+                    match data {
+                        Ok(data)=>{
+                            match data {
+                                Msg::PtyOut(data) => {
+                                    event_tx.send(c_event_e(c_event::Output(output::Event::PtyOut(data))))?;
+                                }
+                                Msg::Replay(data) => {
+                                    event_tx.send(c_event_e(c_event::Output(output::Event::Replay(data))))?;
+                                }
+                                _ => {}
+                            }
+                        },
+                        Err(e) => {
+                            warn!("client worker stopped, reason {:?}", e);
+                            event_tx.send(c_event_e(c_event::Worker(Event::Stop)))?;
+                            break;
                         }
-                        Msg::Replay(data) => {
-                            event_tx.send(c_event_e(c_event::Output(output::Event::Replay(data))))?;
-                        }
-                        _ => {}
                     }
                 }
             }
         }
+        debug!("client worker finish");
         Ok(())
     }
 }
@@ -124,13 +146,17 @@ impl Component for Worker {
                     height: *height,
                 })));
             }
+            c_event_e(c_event::Worker(Event::Stop)) => {
+                ret.push(c_action_e(c_action::Worker(Action::Stop)));
+            }
             _ => {}
         }
         Ok(ret)
     }
     fn action_filter(&mut self, action: &action::Action) -> bool {
         match action {
-            c_action_e(c_action::Worker(_)) => true,
+            c_action_e(c_action::Worker(Action::PtyIn(_)))
+            | c_action_e(c_action::Worker(Action::Resize { .. })) => true,
             _ => false,
         }
     }

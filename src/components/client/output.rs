@@ -74,7 +74,6 @@ impl Component for Output {
                         out,
                         crossterm::terminal::Clear(crossterm::terminal::ClearType::All)
                     )?;
-                    // crossterm::terminal::enable_raw_mode()?;
                     out.write_all(&data)
                         .map_err(|e| eyre!("Failed to write to stdout: {}", e))?;
                     out.flush()
@@ -83,6 +82,7 @@ impl Component for Output {
                     error!("Replay finished, ignoring replay data");
                 }
             }
+            c_event_e(c_event::Worker(super::worker::Event::Stop)) => {}
             _ => {}
         }
         Ok(ret)
