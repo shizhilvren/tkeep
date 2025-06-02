@@ -34,6 +34,36 @@ impl Output {
     pub fn new() -> Self {
         Output::default()
     }
+    pub fn enter(&self) -> Result<()> {
+        let mut out = std::io::stdout();
+        execute!(
+            out,
+            crossterm::style::SetAttribute(crossterm::style::Attribute::Reset),
+            crossterm::terminal::LeaveAlternateScreen,
+            crossterm::terminal::EnableLineWrap,
+            crossterm::cursor::EnableBlinking,
+            crossterm::cursor::Show,
+            crossterm::style::ResetColor,
+            crossterm::cursor::MoveTo(0, 0),
+            crossterm::terminal::Clear(crossterm::terminal::ClearType::All),
+        )?;
+        Ok(())
+    }
+    pub fn leave(&self) -> Result<()> {
+        let mut out = std::io::stdout();
+        execute!(
+            out,
+            crossterm::style::SetAttribute(crossterm::style::Attribute::Reset),
+            crossterm::terminal::LeaveAlternateScreen,
+            crossterm::terminal::EnableLineWrap,
+            crossterm::cursor::EnableBlinking,
+            crossterm::cursor::Show,
+            crossterm::style::ResetColor,
+            crossterm::cursor::MoveTo(0, 0),
+            crossterm::terminal::Clear(crossterm::terminal::ClearType::All),
+        )?;
+        Ok(())
+    }
 }
 
 impl Component for Output {
@@ -62,18 +92,7 @@ impl Component for Output {
             c_event_e(c_event::Output(Event::Replay(data))) => {
                 if !self.reply_finish {
                     self.reply_finish = true;
-                    execute!(
-                        out,
-                        crossterm::style::SetAttribute(crossterm::style::Attribute::Reset)
-                    )?;
-                    execute!(out, crossterm::terminal::LeaveAlternateScreen)?;
-                    execute!(out, crossterm::terminal::EnableLineWrap)?;
-                    execute!(out, crossterm::style::ResetColor)?;
-                    execute!(out, crossterm::cursor::MoveTo(0, 0))?;
-                    execute!(
-                        out,
-                        crossterm::terminal::Clear(crossterm::terminal::ClearType::All)
-                    )?;
+                    self.enter()?;
                     out.write_all(&data)
                         .map_err(|e| eyre!("Failed to write to stdout: {}", e))?;
                     out.flush()
@@ -82,7 +101,9 @@ impl Component for Output {
                     error!("Replay finished, ignoring replay data");
                 }
             }
-            c_event_e(c_event::Worker(super::worker::Event::Stop)) => {}
+            c_event_e(c_event::Worker(super::worker::Event::Stop { .. })) => {
+                self.leave()?;
+            }
             _ => {}
         }
         Ok(ret)

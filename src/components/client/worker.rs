@@ -29,7 +29,7 @@ pub enum Action {
 #[derive(Debug, Clone, PartialEq, Eq, Display, Serialize, Deserialize)]
 pub enum Event {
     Start(String),
-    Stop,
+    Stop { reason: String },
 }
 
 #[derive(Debug, Default)]
@@ -47,35 +47,56 @@ impl Worker {
             name,
         }
     }
+    async fn handle_action(action: Option<action::Action>, uds: &mut UnixStream) -> Result<bool> {
+        let action = action.ok_or(eyre!("Action is None"))?;
+        let ret = match action {
+            c_action_e(c_action::Worker(self::Action::PtyIn(data))) => {
+                let msg = Msg::PtyIn(data);
+                tool::unix_socket::send_message(uds, &msg).await?;
+                false
+            }
+            c_action_e(c_action::Worker(self::Action::Resize { width, height })) => {
+                let msg = Msg::Resize { width, height };
+                tool::unix_socket::send_message(uds, &msg).await?;
+                false
+            }
+            c_action_e(c_action::Worker(self::Action::Stop)) => true,
+            _ => false,
+        };
+        Ok(ret)
+    }
+    async fn handle_msg(msg: Result<Msg>, event_tx: &UnboundedSender<event::Event>) -> Result<()> {
+        match msg {
+            Ok(data) => match data {
+                Msg::PtyOut(data) => {
+                    event_tx.send(c_event_e(c_event::Output(output::Event::PtyOut(data))))?;
+                }
+                Msg::Replay(data) => {
+                    event_tx.send(c_event_e(c_event::Output(output::Event::Replay(data))))?;
+                }
+                _ => {}
+            },
+            Err(e) => {
+                warn!("client worker stopped, reason {:?}", e);
+                event_tx.send(c_event_e(c_event::Worker(Event::Stop {
+                    reason: format!("client stop because server stop"),
+                })))?;
+            }
+        }
+        Ok(())
+    }
     async fn start_player(
         event_tx: UnboundedSender<event::Event>,
         mut action_rx: UnboundedReceiver<action::Action>,
         name: String,
     ) -> Result<()> {
-        let handle_action =
-            async |action: Option<action::Action>, uds: &mut UnixStream| -> Result<bool> {
-                let action = action.ok_or(eyre!("Action is None"))?;
-                let ret = match action {
-                    c_action_e(c_action::Worker(self::Action::PtyIn(data))) => {
-                        let msg = Msg::PtyIn(data);
-                        tool::unix_socket::send_message(uds, &msg).await?;
-                        false
-                    }
-                    c_action_e(c_action::Worker(self::Action::Resize { width, height })) => {
-                        let msg = Msg::Resize { width, height };
-                        tool::unix_socket::send_message(uds, &msg).await?;
-                        false
-                    }
-                    c_action_e(c_action::Worker(self::Action::Stop)) => true,
-                    _ => false,
-                };
-                Ok(ret)
-            };
         let socket_path = PathBuf::from(format!("/tmp/{}.tkeep.sock", name));
         let uds = UnixStream::connect(socket_path).await;
         let mut uds = match uds {
             Err(e) => {
-                event_tx.send(c_event_e(c_event::Worker(Event::Stop)))?;
+                event_tx.send(c_event_e(c_event::Worker(Event::Stop {
+                    reason: format!("cannot client server named '{}'", &name),
+                })))?;
                 error!("clinet fail: {:}", e);
                 Err(eyre!("cannot client server named '{}'.", &name))
             }
@@ -86,28 +107,12 @@ impl Worker {
         loop {
             select! {
                 action = action_rx.recv() => {
-                    if handle_action(action,&mut uds).await? {
+                    if Self::handle_action(action, &mut uds).await? {
                         break;
                     }
                 },
                 data = msg_receive.receive_message::<Msg>(&mut uds) => {
-                    match data {
-                        Ok(data)=>{
-                            match data {
-                                Msg::PtyOut(data) => {
-                                    event_tx.send(c_event_e(c_event::Output(output::Event::PtyOut(data))))?;
-                                }
-                                Msg::Replay(data) => {
-                                    event_tx.send(c_event_e(c_event::Output(output::Event::Replay(data))))?;
-                                }
-                                _ => {}
-                            }
-                        },
-                        Err(e) => {
-                            warn!("client worker stopped, reason {:?}", e);
-                            event_tx.send(c_event_e(c_event::Worker(Event::Stop)))?;
-                        }
-                    }
+                    Self::handle_msg(data, &event_tx).await?;
                 }
             }
         }
@@ -150,7 +155,7 @@ impl Component for Worker {
                     height: *height,
                 })));
             }
-            c_event_e(c_event::Worker(Event::Stop)) => {
+            c_event_e(c_event::Worker(Event::Stop { .. })) => {
                 ret.push(c_action_e(c_action::Worker(Action::Stop)));
             }
             _ => {}

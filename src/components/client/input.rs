@@ -8,7 +8,7 @@ use crate::{action, event, tool};
 use color_eyre::{Result, eyre::eyre};
 use serde::{Deserialize, Serialize};
 use strum::Display;
-use termwiz::input::Modifiers;
+use termwiz::input::{InputParser, Modifiers};
 use tokio::io::AsyncReadExt;
 use tokio::select;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
@@ -33,19 +33,30 @@ pub struct Input {
     action_rx: Option<UnboundedReceiver<action::Action>>,
 }
 
-#[derive(Default)]
+enum InputEventParserStatus {
+    Normal,
+    PreZoon,
+}
 struct InputEventParser {
     imput_parser: termwiz::input::InputParser,
+    status: InputEventParserStatus,
 }
 impl InputEventParser {
-    fn pasrse_as_vec(&mut self, bytes: &[u8]) -> Vec<event::Event> {
+    fn new() -> Self {
+        Self {
+            imput_parser: InputParser::new(),
+            status: InputEventParserStatus::Normal,
+        }
+    }
+    fn parse_as_vec(&mut self, bytes: &[u8]) -> Vec<event::Event> {
+        trace!("parse input {:?}", bytes);
         self.imput_parser
             .parse_as_vec(bytes, false)
             .iter()
-            .filter_map(Self::map_event)
+            .filter_map(|e| self.map_event(e))
             .collect()
     }
-    fn map_event(event: &termwiz::input::InputEvent) -> Option<event::Event> {
+    fn map_event(&mut self, event: &termwiz::input::InputEvent) -> Option<event::Event> {
         use termwiz::input::KeyCode;
         use termwiz::input::KeyEvent;
         trace!("input event {:?}", event);
@@ -53,9 +64,31 @@ impl InputEventParser {
             termwiz::input::InputEvent::Key(KeyEvent { key, modifiers }) => {
                 match (key, modifiers) {
                     (KeyCode::Char('d'), &Modifiers::ALT) => {
-                        Some(c_event_e(c_event::Worker(worker::Event::Stop)))
+                        self.status = InputEventParserStatus::Normal;
+                        Some(c_event_e(c_event::Worker(worker::Event::Stop {
+                            reason: format!("detach client by user"),
+                        })))
                     }
-                    _ => None,
+                    (KeyCode::Char('['), &Modifiers::ALT) => {
+                        self.status = InputEventParserStatus::PreZoon;
+                        None
+                    }
+                    (KeyCode::Char('I'), &Modifiers::NONE) => match self.status {
+                        InputEventParserStatus::PreZoon => {
+                            self.status = InputEventParserStatus::Normal;
+                            crossterm::terminal::size().map_or(None, |size| {
+                                Some(c_event_e(c_event::Input(Event::Resize {
+                                    width: size.0,
+                                    height: size.1,
+                                })))
+                            })
+                        }
+                        InputEventParserStatus::Normal => None,
+                    },
+                    _ => {
+                        self.status = InputEventParserStatus::Normal;
+                        None
+                    }
                 }
             }
             _ => None,
@@ -73,7 +106,7 @@ impl Input {
         mut action_rx: UnboundedReceiver<action::Action>,
     ) -> Result<()> {
         let is_raw_mode = crossterm::terminal::is_raw_mode_enabled()?;
-        let mut input_parser = InputEventParser::default();
+        let mut input_parser = InputEventParser::new();
         match crossterm::terminal::enable_raw_mode() {
             Ok(()) => {
                 let mut resize_signals =
@@ -90,7 +123,7 @@ impl Input {
                             let n = n?;
                             let buf = &buf[..n];
                             event_tx.send(c_event_e(c_event::Input(Event::PtyIn(buf.to_vec()))))?;
-                            for event in input_parser.pasrse_as_vec(&buf[..n]){
+                            for event in input_parser.parse_as_vec(&buf){
                                 event_tx.send(event)?;
                             }
                         }

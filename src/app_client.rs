@@ -33,6 +33,7 @@ pub struct AppClient {
     event_tx: mpsc::UnboundedSender<event::Event>,
     event_rx: mpsc::UnboundedReceiver<event::Event>,
     name: String,
+    exit_reason: Option<String>,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -49,6 +50,7 @@ impl AppClient {
             event_rx,
             config: Config::new()?,
             name,
+            exit_reason: None,
         })
     }
 
@@ -112,8 +114,10 @@ impl AppClient {
                 debug!("{:} is finish", id);
             }
         }
-
         debug!("client finish");
+        if let Some(reason) = &self.exit_reason {
+            println!("{}", reason);
+        }
         std::process::exit(0);
         #[allow(unreachable_code)]
         Ok(())
@@ -130,7 +134,10 @@ impl AppClient {
                 self.add_component(Box::new(worker::Worker::new(name)))?;
                 (false, None)
             }
-            c_event_e(c_event::Worker(worker::Event::Stop)) => (true, Some(event)),
+            c_event_e(c_event::Worker(worker::Event::Stop { ref reason })) => {
+                self.exit_reason = Some(reason.clone());
+                (true, Some(event))
+            }
             _ => (false, Some(event)),
         };
         Ok(next)
