@@ -5,7 +5,10 @@ edition = "2024"
 build = "build.rs"
 default-run = "tkeep"
 description = "TKEEP is a session keep tool"
-
+authors = [
+    "shizhilvren <shizhilvren@foxmail.com>",
+    "Benjamin Shi <aiifabbf@outlook.com>",
+]
 
 [[bin]]
 name = "tclient"
