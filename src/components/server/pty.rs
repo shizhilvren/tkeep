@@ -131,15 +131,15 @@ impl Pty {
         let pty_system = native_pty_system();
         let mut pair = pty_system
             .openpty(PtySize {
-                rows: 24,
-                cols: 80,
+                rows: tool::TTY_SIZE.0,
+                cols: tool::TTY_SIZE.1,
                 // Not all systems support pixel_width, pixel_height,
                 // but it is good practice to set it to something
                 // that matches the size of the selected font.  That
                 // is more complex than can be shown here in this
                 // brief example though!
-                pixel_width: 0,
-                pixel_height: 0,
+                pixel_width: tool::TTY_SIZE.2,
+                pixel_height: tool::TTY_SIZE.3,
             })
             .map_err(|e| eyre!(format!("{:?}", e)))?;
         let args = ["bash"]
