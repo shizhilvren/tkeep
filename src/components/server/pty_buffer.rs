@@ -7,14 +7,13 @@ use crate::components::server::worker;
 use crate::event::Event::Server as s_event_e;
 use crate::event::server::Event as s_event;
 use crate::{action, event};
+use bytes::{BufMut, Bytes, BytesMut};
 use color_eyre::{Result, eyre::eyre};
 use std::collections::VecDeque;
-use std::mem;
 use strum::Display;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 #[allow(unused_imports)]
 use tracing::{debug, error, trace};
-use vte::{Params, Parser, Perform};
 
 #[derive(Debug, Clone, PartialEq, Eq, Display)]
 pub enum Action {
@@ -22,32 +21,15 @@ pub enum Action {
     ReplayData((PID, Vec<u8>)),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Display)]
+#[derive(Debug, Clone, Display)]
 pub enum Event {
     BufferTokens(Vec<PtyOutputToken>),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone)]
 pub struct PtyOutputToken {
-    // action: String,
-    mean: VTEEvent,
-    pub buf: Vec<u8>,
-}
-#[derive(Debug, Clone, PartialEq, Eq, Display, Default)]
-enum VTEEvent {
-    #[default]
-    Print,
-    OscDispatch {
-        params: Vec<Vec<u8>>,
-        bell_terminated: bool,
-    },
-    CsiDispatch {
-        c: char,
-        ignore: bool,
-        params: Vec<Vec<u16>>,
-        intermediates: Vec<u8>,
-    },
-    Other,
+    pub buf: Bytes,
+    mean: termwiz::escape::Action,
 }
 
 #[derive(Debug, Default)]
@@ -59,136 +41,64 @@ pub struct PtyBuffer {
 }
 #[derive(Default)]
 struct TokenBuffer {
-    buffer: Vec<u8>,
-    statemachine: Option<Parser>,
-    token: Option<PtyOutputToken>,
-}
-
-impl Perform for TokenBuffer {
-    fn print(&mut self, c: char) {
-        trace!("[print] {:?}", c);
-        let mut buf = vec![];
-        mem::swap(&mut self.buffer, &mut buf);
-        self.token = Some(PtyOutputToken {
-            buf,
-            mean: VTEEvent::Print,
-        });
-    }
-
-    fn execute(&mut self, byte: u8) {
-        trace!("[execute] {:02x}", byte);
-        let mut buf = vec![];
-        mem::swap(&mut self.buffer, &mut buf);
-        self.token = Some(PtyOutputToken {
-            buf,
-            mean: VTEEvent::Other,
-        });
-    }
-
-    fn hook(&mut self, params: &Params, intermediates: &[u8], ignore: bool, c: char) {
-        trace!(
-            "[hook] params={:?}, intermediates={:?}, ignore={:?}, char={:?}",
-            params, intermediates, ignore, c
-        );
-        let mut buf = vec![];
-        mem::swap(&mut self.buffer, &mut buf);
-        self.token = Some(PtyOutputToken {
-            buf,
-            mean: VTEEvent::Other,
-        });
-    }
-
-    fn put(&mut self, byte: u8) {
-        trace!("[put] {:02x}", byte);
-        let mut buf = vec![];
-        mem::swap(&mut self.buffer, &mut buf);
-        self.token = Some(PtyOutputToken {
-            buf,
-            mean: VTEEvent::Other,
-        });
-    }
-
-    fn unhook(&mut self) {
-        trace!("[unhook]");
-        let mut buf = vec![];
-        mem::swap(&mut self.buffer, &mut buf);
-        self.token = Some(PtyOutputToken {
-            buf,
-            mean: VTEEvent::Other,
-        });
-    }
-
-    fn osc_dispatch(&mut self, params: &[&[u8]], bell_terminated: bool) {
-        trace!(
-            "[osc_dispatch] params={:?} bell_terminated={}",
-            params, bell_terminated
-        );
-        let mut buf = vec![];
-        mem::swap(&mut self.buffer, &mut buf);
-        self.token = Some(PtyOutputToken {
-            buf,
-            mean: VTEEvent::OscDispatch {
-                params: params.iter().map(|&p| p.to_vec()).collect(),
-                bell_terminated,
-            },
-        });
-    }
-
-    fn csi_dispatch(&mut self, params: &Params, intermediates: &[u8], ignore: bool, c: char) {
-        trace!(
-            "[csi_dispatch] params={:?} intermediates={:?}, ignore={:?}, char={:?}",
-            params, intermediates, ignore, c
-        );
-        let mut buf = vec![];
-        mem::swap(&mut self.buffer, &mut buf);
-        self.token = Some(PtyOutputToken {
-            buf,
-            mean: VTEEvent::CsiDispatch {
-                params: params.iter().map(|e| e.to_vec()).collect(),
-                intermediates: intermediates.to_vec(),
-                ignore,
-                c,
-            },
-        });
-    }
-
-    fn esc_dispatch(&mut self, intermediates: &[u8], ignore: bool, byte: u8) {
-        trace!(
-            "[esc_dispatch] intermediates={:?}, ignore={:?}, byte={:02x}",
-            intermediates, ignore, byte
-        );
-        let mut buf = vec![];
-        mem::swap(&mut self.buffer, &mut buf);
-        self.token = Some(PtyOutputToken {
-            buf,
-            mean: VTEEvent::Print,
-        });
-    }
-    fn terminated(&self) -> bool {
-        trace!("[terminated]");
-        false
-    }
+    buffer: BytesMut,
+    paser: termwiz::escape::parser::Parser,
 }
 
 impl TokenBuffer {
     pub fn new() -> Self {
-        TokenBuffer::default()
+        Self {
+            buffer: BytesMut::new(),
+            paser: termwiz::escape::parser::Parser::new(),
+        }
     }
-    pub fn advance(&mut self, data: &[u8]) -> Vec<PtyOutputToken> {
+    pub fn advance(&mut self, data: Bytes) -> Vec<PtyOutputToken> {
         let mut ret = vec![];
-        let mut statemachine = match self.statemachine.take() {
-            Some(statemachine) => statemachine,
-            None => Parser::new(),
-        };
-        data.iter().for_each(|&byte| {
-            self.buffer.push(byte);
-            statemachine.advance(self, &[byte]);
-            if let Some(token) = self.token.take() {
-                ret.push(token);
-            }
-        });
-        self.statemachine = Some(statemachine);
+        self.buffer.put(data);
+        while let Some((action, len)) = self.paser.parse_first(&self.buffer) {
+            let token = self.buffer.split_to(len);
+            ret.push(PtyOutputToken {
+                mean: action,
+                buf: token.into(),
+            });
+        }
         ret
+    }
+}
+
+// reference: link
+// https://invisible-island.net/xterm/ctlseqs/ctlseqs.html
+impl PtyOutputToken {
+    pub fn is_query(&self) -> bool {
+        use termwiz::escape::Action;
+        use termwiz::escape::csi;
+        use termwiz::escape::osc;
+        match &self.mean {
+            Action::OperatingSystemCommand(cmd) => match **cmd {
+                osc::OperatingSystemCommand::QuerySelection(..) => true,
+                _ => false,
+            },
+            Action::CSI(csi) => match csi {
+                csi::CSI::Cursor(cursor) => match cursor {
+                    csi::Cursor::RequestActivePositionReport => true,
+                    _ => false,
+                },
+                csi::CSI::Mode(mode) => match mode {
+                    csi::Mode::QueryDecPrivateMode(..) => true,
+                    csi::Mode::QueryMode(..) => true,
+                    _ => false,
+                },
+                csi::CSI::Device(device) => match **device {
+                    csi::Device::RequestPrimaryDeviceAttributes => true,
+                    csi::Device::RequestTerminalNameAndVersion => true,
+                    csi::Device::RequestTerminalParameters(..) => true,
+                    csi::Device::RequestSecondaryDeviceAttributes => true,
+                    _ => false,
+                },
+                _ => false,
+            },
+            _ => false,
+        }
     }
 }
 
@@ -206,9 +116,9 @@ impl PtyBuffer {
             match action {
                 s_action_e(s_action::PtyBuffer(Action::BufferIn(data))) => {
                     let tokens = token_buffer
-                        .advance(&data)
+                        .advance(Bytes::from_owner(data))
                         .into_iter()
-                        .filter(|token| !token.mean.is_query())
+                        .filter(|token| !token.is_query())
                         .collect();
                     event_tx.send(s_event_e(s_event::PtyBuffer(Event::BufferTokens(tokens))))?;
                 }
@@ -288,42 +198,3 @@ impl Component for PtyBuffer {
     }
 }
 
-// reference: link
-// https://invisible-island.net/xterm/ctlseqs/ctlseqs.html
-impl VTEEvent {
-    pub fn is_query(&self) -> bool {
-        match self {
-            VTEEvent::CsiDispatch {
-                params,
-                intermediates,
-                ignore,
-                c,
-            } => {
-                let params = params.iter().map(|e| e.as_slice()).collect::<Vec<_>>();
-                let params = params.as_slice();
-                let intermediates = intermediates.as_slice();
-                match (params, intermediates, ignore, c) {
-                    (_, [], _, 'n') => true,                 //光标位置查询
-                    (_, [b'?'], _, 'n') => true,             //光标位置查询
-                    ([[0_u16]], [b'>'], false, 'c') => true, //设备属性查询
-                    (_, [b'?'], _, 'm') => true,
-                    (_, [b'$'], _, 'p') => true,
-                    (_, [b'?', b'$'], _, 'p') => true,
-                    _ => false,
-                }
-            }
-            VTEEvent::OscDispatch {
-                params,
-                bell_terminated,
-            } => {
-                let params = params.iter().map(|e| e.as_slice()).collect::<Vec<_>>();
-                let params = params.as_slice();
-                match (params, bell_terminated) {
-                    ([_, [63]], _) => true, //osc 查询序列
-                    _ => false,
-                }
-            }
-            _ => false,
-        }
-    }
-}
