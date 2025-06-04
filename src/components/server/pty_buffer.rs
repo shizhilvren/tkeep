@@ -29,13 +29,14 @@ pub enum Event {
 pub struct PtyBuffer {
     event_tx: Option<UnboundedSender<event::Event>>,
     action_rx: Option<UnboundedReceiver<action::Action>>,
-    output_buf: BytesMut,
+    output_buf: paser::PtyReplayBuffer,
 }
 
 mod paser {
     use std::collections::VecDeque;
 
     use bytes::{BufMut, Bytes, BytesMut};
+    use termwiz::escape::CSI;
 
     #[derive(Default)]
     pub struct Paser {
@@ -49,7 +50,7 @@ mod paser {
         pub buf: Bytes,
         pub mean: Mean,
         in_alternate_screen: bool,
-        cut_point: Option<CutPoint>,
+        cut_point: Option<CutPoint>, // this pot is before do buffer
     }
 
     #[derive(Debug, Clone)]
@@ -57,8 +58,8 @@ mod paser {
     #[derive(Debug, Clone)]
     pub struct Mean(termwiz::escape::Action);
 
-    #[derive(Debug, Clone)]
-    struct PtyReplayBuffer {
+    #[derive(Debug, Clone, Default)]
+    pub struct PtyReplayBuffer {
         now_point: Option<CutPoint>,
         cut_parts: VecDeque<PtyReplayBufferOne>,
         part: Option<PtyReplayBufferOne>,
@@ -78,6 +79,9 @@ mod paser {
                 vt100: vt100::Parser::new(rows, cols, 0),
             }
         }
+        pub fn resize(&mut self, rows: u16, cols: u16) {
+            self.vt100.set_size(rows, cols);
+        }
         pub fn advance(&mut self, data: Bytes) -> Vec<Token> {
             let mut actions: Vec<(Mean, Bytes)> = vec![];
             self.buffer.put(data);
@@ -88,14 +92,15 @@ mod paser {
             actions
                 .into_iter()
                 .map(|(mean, buf)| {
-                    self.vt100.process(&buf);
-                    let is_cut = mean.is_newline();
                     let screen = self.vt100.screen();
-                    let alternate_screen = screen.alternate_screen();
+                    let alternate_screen = screen.alternate_screen()
+                        || (!screen.alternate_screen() && mean.enter_alternate_screen());
+                    let is_cut = mean.is_newline();
                     let cut_point = match (is_cut, alternate_screen) {
                         (true, false) => Some(CutPoint(screen.clone())),
                         _ => None,
                     };
+                    self.vt100.process(&buf);
                     Token {
                         buf,
                         mean,
@@ -116,6 +121,34 @@ mod paser {
             match &self.0 {
                 Action::Control(ctl) => match *ctl {
                     ControlCode::LineFeed => true,
+                    _ => false,
+                },
+                _ => false,
+            }
+        }
+        pub fn enter_alternate_screen(&self) -> bool {
+            use termwiz::escape::Action;
+            use termwiz::escape::csi;
+            match &self.0 {
+                Action::CSI(CSI::Mode(csi::Mode::SetDecPrivateMode(
+                    csi::DecPrivateMode::Code(code),
+                ))) => match code {
+                    csi::DecPrivateModeCode::ClearAndEnableAlternateScreen => true,
+                    csi::DecPrivateModeCode::OptEnableAlternateScreen => true,
+                    _ => false,
+                },
+                _ => false,
+            }
+        }
+        pub fn leave_alternate_screen(&self) -> bool {
+            use termwiz::escape::Action;
+            use termwiz::escape::csi;
+            match &self.0 {
+                Action::CSI(CSI::Mode(csi::Mode::ResetDecPrivateMode(
+                    csi::DecPrivateMode::Code(code),
+                ))) => match code {
+                    csi::DecPrivateModeCode::ClearAndEnableAlternateScreen => true,
+                    csi::DecPrivateModeCode::OptEnableAlternateScreen => true,
                     _ => false,
                 },
                 _ => false,
@@ -153,6 +186,56 @@ mod paser {
             }
         }
     }
+    impl PtyReplayBufferOne {
+        pub fn new(cp: CutPoint) -> Self {
+            Self {
+                buffer: BytesMut::new(),
+                start: cp,
+            }
+        }
+        pub fn get_replay_buffer(&self) -> &BytesMut {
+            &self.buffer
+        }
+        pub fn advance(&mut self, token: Token) -> bool {
+            match token.in_alternate_screen {
+                _ => {
+                    let cut_end = token.mean.is_newline();
+                    self.buffer.put(token.buf);
+                    cut_end
+                }
+            }
+        }
+    }
+    impl PtyReplayBuffer {
+        pub fn init(&mut self, cp: CutPoint) {
+            self.cut_parts.clear();
+            self.now_point = Some(cp.clone());
+            self.part = Some(PtyReplayBufferOne::new(cp));
+        }
+        pub fn get_replay_buffer(&self) -> Vec<u8> {
+            self.cut_parts
+                .iter()
+                .chain(self.part.iter())
+                .map(|buf| buf.get_replay_buffer().to_vec())
+                .flatten()
+                .collect()
+        }
+        pub fn advance(&mut self, tokens: Vec<Token>) {
+            assert!(self.part.is_some(), "PtyReplayBuffer not init");
+            assert!(self.now_point.is_some(), "PtyReplayBuffer not init");
+            tokens
+                .into_iter()
+                .filter(|token| token.mean.is_query())
+                .for_each(|token| {
+                    let part = match self.part.take() {
+                        Some(part) => part,
+                        None => PtyReplayBufferOne::new(token.cut_point),
+                    };
+                    part.advance(token);
+                    self.part = Some(part);
+                });
+        }
+    }
 }
 
 impl PtyBuffer {
@@ -174,6 +257,9 @@ impl PtyBuffer {
                         .filter(|token| !token.mean.is_query())
                         .collect();
                     event_tx.send(s_event_e(s_event::PtyBuffer(Event::BufferTokens(tokens))))?;
+                }
+                s_action_e(s_action::Pty(pty::Action::Resize { width, height })) => {
+                    token_buffer.resize(height, width);
                 }
                 s_action_e(s_action::Pty(pty::Action::PtyFinish)) => {
                     break;
@@ -231,11 +317,7 @@ impl Component for PtyBuffer {
             s_event_e(s_event::Worker(worker::Event::Replay(pid))) => {
                 ret.push(s_action_e(s_action::PtyBuffer(Action::ReplayData((
                     pid.clone(),
-                    self.output_buf
-                        .iter()
-                        .map(|e| e.clone())
-                        // .filter(|token| !token.mean.is_query())
-                        .collect::<Vec<u8>>(),
+                    self.output_buf.get_replay_buffer(),
                 )))));
             }
             _ => {}
@@ -246,6 +328,7 @@ impl Component for PtyBuffer {
         match action {
             s_action_e(s_action::PtyBuffer(Action::BufferIn(_))) => true,
             s_action_e(s_action::Pty(pty::Action::PtyFinish)) => true,
+            s_action_e(s_action::Pty(pty::Action::Resize { .. })) => true,
             _ => false,
         }
     }
