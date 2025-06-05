@@ -29,7 +29,7 @@ pub enum Event {
 pub struct PtyBuffer {
     event_tx: Option<UnboundedSender<event::Event>>,
     action_rx: Option<UnboundedReceiver<action::Action>>,
-    output_buf: paser::PtyReplayBuffer,
+    output_buf: Option<paser::PtyReplayBuffer>,
 }
 
 mod paser {
@@ -58,11 +58,11 @@ mod paser {
     #[derive(Debug, Clone)]
     pub struct Mean(termwiz::escape::Action);
 
-    #[derive(Debug, Clone, Default)]
+    #[derive(Debug, Clone)]
     pub struct PtyReplayBuffer {
         now_point: Option<CutPoint>,
         cut_parts: VecDeque<PtyReplayBufferOne>,
-        part: Option<PtyReplayBufferOne>,
+        part: PtyReplayBufferOne,
     }
 
     #[derive(Debug, Clone)]
@@ -207,15 +207,25 @@ mod paser {
         }
     }
     impl PtyReplayBuffer {
-        pub fn init(&mut self, cp: CutPoint) {
-            self.cut_parts.clear();
-            self.now_point = Some(cp.clone());
-            self.part = Some(PtyReplayBufferOne::new(cp));
+        pub fn new(cp: CutPoint) -> Self {
+            Self {
+                now_point: Some(cp.clone()),
+                cut_parts: VecDeque::new(),
+                part: PtyReplayBufferOne::new(cp),
+            }
+        }
+        pub fn last_mut(&mut self) -> &mut PtyReplayBufferOne {
+            &mut self.part
+        }
+        pub fn last_finish(&mut self, cp: CutPoint) {
+            let mut new_last = PtyReplayBufferOne::new(cp);
+            std::mem::swap(&mut self.part, &mut new_last);
+            self.cut_parts.push_back(new_last);
         }
         pub fn get_replay_buffer(&self) -> Vec<u8> {
             self.cut_parts
                 .iter()
-                .chain(self.part.iter())
+                .chain(std::iter::once(values::Some(&self.part)))
                 .map(|buf| buf.get_replay_buffer().to_vec())
                 .flatten()
                 .collect()
