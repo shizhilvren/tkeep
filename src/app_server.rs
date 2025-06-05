@@ -1,6 +1,7 @@
 use crate::components::server::{client_listener, pty, pty_buffer, worker};
 use crate::event::Event::Server as s_event_e;
 use crate::event::server::Event as s_event;
+use crate::tool;
 use crate::{
     action,
     components::{Component, PID},
@@ -128,7 +129,8 @@ impl AppServer {
                 (false, None)
             }
             s_event_e(s_event::App(app_server::Event::StartPtyBuffer)) => {
-                self.add_component(Box::new(pty_buffer::PtyBuffer::new()))?;
+                let paser = pty_buffer::paser::Paser::new(tool::TTY_SIZE.0, tool::TTY_SIZE.1);
+                self.add_component(Box::new(pty_buffer::PtyBuffer::new(paser)))?;
                 (false, None)
             }
             s_event_e(s_event::ClinetListener(client_listener::Event::NewClient(stream))) => {

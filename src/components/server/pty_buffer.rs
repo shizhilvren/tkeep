@@ -6,8 +6,8 @@ use crate::components::PID;
 use crate::components::server::worker;
 use crate::event::Event::Server as s_event_e;
 use crate::event::server::Event as s_event;
-use crate::{action, event, tool};
-use bytes::{BufMut, Bytes, BytesMut};
+use crate::{action, event};
+use bytes::{BufMut, Bytes};
 use color_eyre::{Result, eyre::eyre};
 use strum::Display;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
@@ -22,21 +22,23 @@ pub enum Action {
 
 #[derive(Debug, Clone, Display)]
 pub enum Event {
-    BufferTokens(Vec<paser::Token>),
+    BufferTokens((Vec<paser::Token>, paser::CutPoint)),
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct PtyBuffer {
     event_tx: Option<UnboundedSender<event::Event>>,
     action_rx: Option<UnboundedReceiver<action::Action>>,
-    output_buf: Option<paser::PtyReplayBuffer>,
+    output_buf: paser::PtyReplayBuffer,
+    paser: Option<paser::Paser>,
 }
 
-mod paser {
-    use std::collections::VecDeque;
-
+pub mod paser {
     use bytes::{BufMut, Bytes, BytesMut};
+    use crossterm::Command;
+    use std::{collections::VecDeque, fmt::Debug};
     use termwiz::escape::CSI;
+    use tracing::error;
 
     #[derive(Default)]
     pub struct Paser {
@@ -45,7 +47,7 @@ mod paser {
         vt100: vt100::Parser,
     }
 
-    #[derive(Debug, Clone)]
+    #[derive(Clone)]
     pub struct Token {
         pub buf: Bytes,
         pub mean: Mean,
@@ -60,15 +62,15 @@ mod paser {
 
     #[derive(Debug, Clone)]
     pub struct PtyReplayBuffer {
-        now_point: Option<CutPoint>,
+        now_point: CutPoint,
         cut_parts: VecDeque<PtyReplayBufferOne>,
         part: PtyReplayBufferOne,
     }
 
     #[derive(Debug, Clone)]
-    struct PtyReplayBufferOne {
+    pub struct PtyReplayBufferOne {
         buffer: BytesMut,
-        start: CutPoint,
+        start: Bytes,
     }
 
     impl Paser {
@@ -92,15 +94,23 @@ mod paser {
             actions
                 .into_iter()
                 .map(|(mean, buf)| {
+                    self.vt100.process(&buf);
                     let screen = self.vt100.screen();
-                    let alternate_screen = screen.alternate_screen()
-                        || (!screen.alternate_screen() && mean.enter_alternate_screen());
+                    let alternate_screen: bool = screen.alternate_screen()
+                        || (mean.enter_alternate_screen() || mean.leave_alternate_screen());
+
+                    let alternate_screen: bool =
+                        if screen.alternate_screen() && mean.enter_alternate_screen() {
+                            false
+                        } else {
+                            screen.alternate_screen()
+                        };
                     let is_cut = mean.is_newline();
                     let cut_point = match (is_cut, alternate_screen) {
                         (true, false) => Some(CutPoint(screen.clone())),
                         _ => None,
                     };
-                    self.vt100.process(&buf);
+                    // let cut_point = None;
                     Token {
                         buf,
                         mean,
@@ -109,6 +119,9 @@ mod paser {
                     }
                 })
                 .collect()
+        }
+        pub fn get_screen(&self) -> CutPoint {
+            CutPoint(self.vt100.screen().clone())
         }
     }
 
@@ -187,10 +200,19 @@ mod paser {
         }
     }
     impl PtyReplayBufferOne {
-        pub fn new(cp: CutPoint) -> Self {
+        pub fn new(cp: &CutPoint) -> Self {
             Self {
                 buffer: BytesMut::new(),
-                start: cp,
+                start: Bytes::from_iter(
+                    vec![
+                        cp.0.attributes_formatted(),
+                        cp.0.input_mode_formatted(),
+                        cp.0.title_formatted(),
+                        // cp.0.cursor_state_formatted(),
+                    ]
+                    .into_iter()
+                    .flatten(),
+                ),
             }
         }
         pub fn get_replay_buffer(&self) -> &BytesMut {
@@ -205,58 +227,139 @@ mod paser {
                 }
             }
         }
+        pub fn len(&self) -> usize {
+            self.buffer.len()
+        }
+        pub fn get_screen(&self) -> &Bytes {
+            &self.start
+        }
     }
     impl PtyReplayBuffer {
         pub fn new(cp: CutPoint) -> Self {
             Self {
-                now_point: Some(cp.clone()),
+                part: PtyReplayBufferOne::new(&cp),
+                now_point: cp,
                 cut_parts: VecDeque::new(),
-                part: PtyReplayBufferOne::new(cp),
             }
         }
         pub fn last_mut(&mut self) -> &mut PtyReplayBufferOne {
             &mut self.part
         }
-        pub fn last_finish(&mut self, cp: CutPoint) {
+        pub fn first(&self) -> &PtyReplayBufferOne {
+            match self.cut_parts.front() {
+                Some(part) => part,
+                None => &self.part,
+            }
+        }
+        pub fn last_finish(&mut self, cp: &CutPoint) {
             let mut new_last = PtyReplayBufferOne::new(cp);
             std::mem::swap(&mut self.part, &mut new_last);
             self.cut_parts.push_back(new_last);
         }
         pub fn get_replay_buffer(&self) -> Vec<u8> {
-            self.cut_parts
-                .iter()
-                .chain(std::iter::once(values::Some(&self.part)))
-                .map(|buf| buf.get_replay_buffer().to_vec())
+            use crossterm::{ExecutableCommand, cursor};
+            let mut events = BytesMut::new();
+            match crossterm::cursor::MoveTo(0, 0).write_ansi(&mut events) {
+                Err(e) => {
+                    error!(" move to 0 0 fail: {}", e);
+                }
+                Ok(_) => {}
+            }
+
+            let events = events.to_vec();
+
+            let now = &self.now_point.0;
+            let start = &self.first().get_screen();
+            vec![start.to_vec()]
+                .into_iter()
+                .chain(
+                    self.cut_parts
+                        .iter()
+                        .chain(std::iter::once(&self.part))
+                        .map(|buf| buf.get_replay_buffer().to_vec()),
+                )
+                .chain(std::iter::once(match now.alternate_screen() {
+                    true => vec![
+                        events,
+                        // now.input_mode_formatted(),
+                        now.state_formatted(),
+                        // now.attributes_formatted(),
+                        // now.title_formatted(),
+                        // now.contents_formatted(),
+                        // now.cursor_state_formatted(),
+                    ]
+                    .into_iter()
+                    .flatten()
+                    .collect(),
+                    false => vec![],
+                }))
+                // .chain(std::iter::once(match self.now_point.0.alternate_screen() {
+                //     true => self.now_point.0.attributes_formatted(),
+                //     false => vec![],
+                // }))
                 .flatten()
                 .collect()
         }
         pub fn advance(&mut self, tokens: Vec<Token>) {
-            assert!(self.part.is_some(), "PtyReplayBuffer not init");
-            assert!(self.now_point.is_some(), "PtyReplayBuffer not init");
             tokens
                 .into_iter()
-                .filter(|token| token.mean.is_query())
-                .for_each(|token| {
-                    let part = match self.part.take() {
-                        Some(part) => part,
-                        None => PtyReplayBufferOne::new(token.cut_point),
-                    };
-                    part.advance(token);
-                    self.part = Some(part);
+                .filter(|token| !token.mean.is_query())
+                .filter(|token| !token.in_alternate_screen)
+                .for_each(|mut token| {
+                    let screen = token.cut_point.take();
+                    self.last_mut().advance(token);
+                    screen.map(|s| {
+                        self.last_finish(&s);
+                    });
                 });
+        }
+        pub fn update_screen(&mut self, cp: CutPoint) {
+            self.now_point = cp;
+        }
+        pub fn len(&self) -> usize {
+            self.cut_parts
+                .iter()
+                .chain(std::iter::once(&self.part))
+                .map(|buf| buf.len())
+                .sum()
+        }
+        pub fn lines_number(&self) -> usize {
+            self.cut_parts
+                .iter()
+                .chain(std::iter::once(&self.part))
+                .count()
+        }
+    }
+    impl Debug for Paser {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "Paser {{ {:?} }}", &self.buffer)
+        }
+    }
+    impl Debug for Token {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(
+                f,
+                "Token {{ buf: {:?} means: {:?} alternate_screen: {} }}",
+                &self.buf, &self.mean, &self.in_alternate_screen
+            )
         }
     }
 }
 
 impl PtyBuffer {
-    pub fn new() -> Self {
-        PtyBuffer::default()
+    pub fn new(paser: paser::Paser) -> Self {
+        Self {
+            event_tx: None,
+            action_rx: None,
+            output_buf: paser::PtyReplayBuffer::new(paser.get_screen()),
+            paser: Some(paser),
+        }
     }
     async fn start_pty_buffer(
         event_tx: UnboundedSender<event::Event>,
         mut action_rx: UnboundedReceiver<action::Action>,
+        mut token_buffer: paser::Paser,
     ) -> Result<()> {
-        let mut token_buffer = paser::Paser::new(tool::TTY_SIZE.0, tool::TTY_SIZE.1);
         loop {
             let action = action_rx.recv().await.ok_or(eyre!("action not get"))?;
             match action {
@@ -264,9 +367,11 @@ impl PtyBuffer {
                     let tokens = token_buffer
                         .advance(Bytes::from_owner(data))
                         .into_iter()
-                        .filter(|token| !token.mean.is_query())
                         .collect();
-                    event_tx.send(s_event_e(s_event::PtyBuffer(Event::BufferTokens(tokens))))?;
+                    let cp = token_buffer.get_screen();
+                    event_tx.send(s_event_e(s_event::PtyBuffer(Event::BufferTokens((
+                        tokens, cp,
+                    )))))?;
                 }
                 s_action_e(s_action::Pty(pty::Action::Resize { width, height })) => {
                     token_buffer.resize(height, width);
@@ -295,9 +400,11 @@ impl Component for PtyBuffer {
     fn run(&mut self) -> Result<Option<tokio::task::JoinHandle<Result<()>>>> {
         let event_rx = self.event_tx.clone();
         let action_tx = self.action_rx.take();
+        let token_buffer = self.paser.take().ok_or(eyre!("Paser not initialized"))?;
+        // self.output_buf = Some(paser::PtyReplayBuffer::new(token_buffer.get_screen()));
         match (event_rx, action_tx) {
             (Some(event_rx), Some(action_tx)) => {
-                let task = Self::start_pty_buffer(event_rx, action_tx);
+                let task = Self::start_pty_buffer(event_rx, action_tx, token_buffer);
                 let handle = tokio::spawn(task);
                 Ok(Some(handle))
             }
@@ -312,17 +419,14 @@ impl Component for PtyBuffer {
                     data.clone(),
                 ))));
             }
-            s_event_e(s_event::PtyBuffer(Event::BufferTokens(tokens))) => {
+            s_event_e(s_event::PtyBuffer(Event::BufferTokens((tokens, cp)))) => {
                 trace!(
-                    "buffer size {} MB",
-                    self.output_buf.len() as f64 * size_of::<u8>() as f64 / 4_f64 / 1024_f64
+                    "buffer lines {} size {} MB",
+                    self.output_buf.lines_number(),
+                    self.output_buf.len() as f64 / 1024_f64 / 1024_f64
                 );
-                let buf = tokens
-                    .into_iter()
-                    .map(|token| token.buf.clone())
-                    .flatten()
-                    .collect::<Vec<_>>();
-                self.output_buf.put(buf.as_slice());
+                self.output_buf.advance(tokens.clone());
+                self.output_buf.update_screen(cp.clone());
             }
             s_event_e(s_event::Worker(worker::Event::Replay(pid))) => {
                 ret.push(s_action_e(s_action::PtyBuffer(Action::ReplayData((

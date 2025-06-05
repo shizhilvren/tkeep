@@ -10,6 +10,8 @@ use color_eyre::{Result, eyre::eyre};
 use crossterm::execute;
 use serde::{Deserialize, Serialize};
 use std::io::Write;
+use std::thread::sleep;
+use std::time::Duration;
 use strum::Display;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tracing::error;
@@ -93,10 +95,17 @@ impl Component for Output {
                 if !self.reply_finish {
                     self.reply_finish = true;
                     self.enter()?;
+                    // for a in data{
+                    //     out.write_all(&[*a])?;
+                    //     out.flush()?;
+                    //     // sleep(Duration::from_millis(1));
+                    // }
                     out.write_all(&data)
                         .map_err(|e| eyre!("Failed to write to stdout: {}", e))?;
+                    // // out.write_all("!!!!!!!!!!!!!!!!!!!!!!!!!!!!".as_bytes())?;
                     out.flush()
                         .map_err(|e| eyre!("Failed to flush stdout: {}", e))?;
+                    // sleep(Duration::from_millis(5000));
                 } else {
                     error!("Replay finished, ignoring replay data");
                 }

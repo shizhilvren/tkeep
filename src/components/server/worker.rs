@@ -160,6 +160,7 @@ impl Component for Worker {
             s_event_e(s_event::Worker(Event::Replay(pid))) => {
                 if Some(pid.clone()) == self.pid {
                     self.replay_finish = true;
+                    // self.replay_finish = false;
                 }
             }
             s_event_e(s_event::Pty(pty::Event::PtyOut(buf))) => {
