@@ -34,11 +34,11 @@ pub struct PtyBuffer {
 }
 
 pub mod paser {
-    use bytes::{BufMut, Bytes, BytesMut};
+    use bytes::{BufMut, Bytes, BytesMut, buf};
     use crossterm::Command;
-    use std::{collections::VecDeque, fmt::Debug};
+    use std::{collections::VecDeque, fmt::Debug, io::Read};
     use termwiz::escape::CSI;
-    use tracing::{debug, error};
+    use tracing::{debug, error, trace};
 
     #[derive(Default)]
     pub struct Paser {
@@ -50,13 +50,20 @@ pub mod paser {
     #[derive(Clone)]
     pub struct Token {
         pub buf: Bytes,
-        pub mean: Mean,
-        in_alternate_screen: bool,
-        cut_point: Option<CutPoint>, // this pot is before do buffer
+        // pub mean: Mean,
+        // in_alternate_screen: bool,
+        cut_point: Option<CutLinePoint>, // this pot is before do buffer
     }
 
     #[derive(Debug, Clone)]
     pub struct CutPoint(vt100::Screen);
+    #[derive(Debug, Clone)]
+    pub struct CutLinePoint {
+        attributes_formatted: Bytes,
+        input_mode_formatted: Bytes,
+        title_formatted: Bytes,
+    }
+
     #[derive(Debug, Clone)]
     pub struct Mean(termwiz::escape::Action);
 
@@ -71,7 +78,7 @@ pub mod paser {
     #[derive(Debug, Clone)]
     pub struct PtyReplayBufferOne {
         buffer: BytesMut,
-        start: Bytes,
+        start: CutLinePoint,
     }
 
     impl Paser {
@@ -86,40 +93,36 @@ pub mod paser {
             self.vt100.set_size(rows, cols);
         }
         pub fn advance(&mut self, data: Bytes) -> Vec<Token> {
-            let mut actions: Vec<(Mean, Bytes)> = vec![];
             self.buffer.put(data);
-            while let Some((action, len)) = self.paser.parse_first(&self.buffer) {
-                let token = self.buffer.split_to(len);
-                actions.push((Mean(action), token.into()));
-            }
-            actions
-                .into_iter()
-                .map(|(mean, buf)| {
-                    self.vt100.process(&buf);
-                    let screen = self.vt100.screen();
-                    let alternate_screen: bool = screen.alternate_screen()
-                        || (mean.enter_alternate_screen() || mean.leave_alternate_screen());
-
-                    let alternate_screen: bool =
-                        if screen.alternate_screen() && mean.enter_alternate_screen() {
-                            false
-                        } else {
-                            screen.alternate_screen()
-                        };
-                    let is_cut = mean.is_newline();
-                    let cut_point = match (is_cut, alternate_screen) {
-                        (true, false) => Some(CutPoint(screen.clone())),
-                        _ => None,
+            std::iter::from_fn(|| match self.paser.parse_first(&self.buffer) {
+                Some((action, len)) => {
+                    let token = self.buffer.split_to(len);
+                    Some((Mean(action), token))
+                }
+                None => None,
+            })
+            .map(|(mean, buf)| {
+                self.vt100.process(&buf);
+                let screen = self.vt100.screen();
+                let alternate_screen: bool =
+                    if screen.alternate_screen() && mean.enter_alternate_screen() {
+                        false
+                    } else {
+                        screen.alternate_screen()
                     };
-                    // let cut_point = None;
-                    Token {
-                        buf,
-                        mean,
-                        in_alternate_screen: alternate_screen,
-                        cut_point,
-                    }
-                })
-                .collect()
+                let is_cut = mean.is_newline();
+                let cut_point = match (is_cut, alternate_screen) {
+                    (true, false) => Some(CutLinePoint::new(&CutPoint(screen.clone()))),
+                    _ => None,
+                };
+                // let cut_point = None;
+                let buf: Bytes = buf.into();
+                (buf, cut_point, mean, alternate_screen)
+            })
+            .filter(|(_, _, mean, ..)| !mean.is_query())
+            .filter(|(_, _, _, alternate)| !alternate)
+            .map(|(buf, cut_point, ..)| Token { buf, cut_point })
+            .collect()
         }
         pub fn get_screen(&self) -> CutPoint {
             CutPoint(self.vt100.screen().clone())
@@ -201,44 +204,47 @@ pub mod paser {
         }
     }
     impl PtyReplayBufferOne {
-        pub fn new(cp: &CutPoint) -> Self {
+        pub fn new(cp: CutLinePoint) -> Self {
             Self {
                 buffer: BytesMut::new(),
-                start: Bytes::from_iter(
-                    vec![
-                        cp.0.attributes_formatted(),
-                        cp.0.input_mode_formatted(),
-                        cp.0.title_formatted(),
-                        // cp.0.cursor_state_formatted(),
-                    ]
-                    .into_iter()
-                    .flatten(),
-                ),
+                start: cp,
             }
         }
         pub fn get_replay_buffer(&self) -> &BytesMut {
             &self.buffer
         }
-        pub fn advance(&mut self, token: Token) -> bool {
-            match token.in_alternate_screen {
-                _ => {
-                    let cut_end = token.mean.is_newline();
-                    self.buffer.put(token.buf);
-                    cut_end
-                }
-            }
+        pub fn advance(&mut self, token: Token) {
+            self.buffer.put(token.buf);
         }
         pub fn len(&self) -> usize {
             self.buffer.len()
         }
-        pub fn get_screen(&self) -> &Bytes {
-            &self.start
+        pub fn get_screen(&self) -> Bytes {
+            self.start.get_screen()
+        }
+    }
+    impl CutLinePoint {
+        pub fn new(cp: &CutPoint) -> Self {
+            Self {
+                attributes_formatted: cp.0.attributes_formatted().into(),
+                input_mode_formatted: cp.0.input_mode_formatted().into(),
+                title_formatted: cp.0.title_formatted().into(),
+            }
+        }
+        pub fn get_screen(&self) -> Bytes {
+            Bytes::from_iter(
+                std::iter::once(&self.attributes_formatted)
+                    .chain(std::iter::once(&self.input_mode_formatted))
+                    .chain(std::iter::once(&self.title_formatted))
+                    .map(|e| e.to_vec())
+                    .flatten(),
+            )
         }
     }
     impl PtyReplayBuffer {
         pub fn new(cp: CutPoint, history: u32) -> Self {
             Self {
-                part: PtyReplayBufferOne::new(&cp),
+                part: PtyReplayBufferOne::new(CutLinePoint::new(&cp)),
                 now_point: cp,
                 cut_parts: VecDeque::new(),
                 history,
@@ -253,18 +259,17 @@ pub mod paser {
                 None => &self.part,
             }
         }
-        pub fn last_finish(&mut self, cp: &CutPoint) {
+        pub fn last_finish(&mut self, cp: CutLinePoint) {
             let mut new_last = PtyReplayBufferOne::new(cp);
             std::mem::swap(&mut self.part, &mut new_last);
             self.cut_parts.push_back(new_last);
+            trace!("add new last line {:?}", &self.part);
             while self.lines_number() as u64 > self.history as u64 {
-                if let Some(part) = self.cut_parts.pop_front() {
-                    debug!("remove part: {}", part.len());
-                }
+                self.cut_parts.pop_front();
+                trace!("remove oneline");
             }
         }
         pub fn get_replay_buffer(&self) -> Vec<u8> {
-            use crossterm::{ExecutableCommand, cursor};
             let mut events = BytesMut::new();
             match crossterm::cursor::MoveTo(0, 0).write_ansi(&mut events) {
                 Err(e) => {
@@ -272,9 +277,7 @@ pub mod paser {
                 }
                 Ok(_) => {}
             }
-
             let events = events.to_vec();
-
             let now = &self.now_point.0;
             let start = &self.first().get_screen();
             vec![start.to_vec()]
@@ -308,17 +311,13 @@ pub mod paser {
                 .collect()
         }
         pub fn advance(&mut self, tokens: Vec<Token>) {
-            tokens
-                .into_iter()
-                .filter(|token| !token.mean.is_query())
-                .filter(|token| !token.in_alternate_screen)
-                .for_each(|mut token| {
-                    let screen = token.cut_point.take();
-                    self.last_mut().advance(token);
-                    screen.map(|s| {
-                        self.last_finish(&s);
-                    });
+            tokens.into_iter().for_each(|mut token| {
+                let screen = token.cut_point.take();
+                self.last_mut().advance(token);
+                screen.map(|s| {
+                    self.last_finish(s);
                 });
+            });
         }
         pub fn update_screen(&mut self, cp: CutPoint) {
             self.now_point = cp;
@@ -343,8 +342,9 @@ pub mod paser {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             write!(
                 f,
-                "Token {{ buf: {:?} means: {:?} alternate_screen: {} }}",
-                &self.buf, &self.mean, &self.in_alternate_screen
+                "Token {{ buf: {:?} is_cut: {:?} }}",
+                &self.buf,
+                &self.cut_point.is_some()
             )
         }
     }

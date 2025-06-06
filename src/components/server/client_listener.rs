@@ -64,8 +64,18 @@ impl ClinetListener {
     ) -> Result<()> {
         let event_tx = event_tx;
         let path = PathBuf::from(format!("/tmp/{}.tkeep.sock", name));
+        debug!("Starting client listener on {:?}", path);
         let _ = std::fs::remove_file(&path);
-        let listener = UnixListener::bind(&path)?;
+        let listener = match UnixListener::bind(&path) {
+            Ok(listener) => {
+                debug!("Listening on {:?}", path);
+                Ok(listener)
+            }
+            Err(e) => {
+                error!("Failed to bind to {:?}: {}", path, e);
+                Err(e)
+            }
+        }?;
         loop {
             select! {
                 action = action_rx.recv() => {
@@ -98,13 +108,17 @@ impl Component for ClinetListener {
     fn run(&mut self) -> Result<Option<tokio::task::JoinHandle<Result<()>>>> {
         let event_rx = self.event_tx.clone();
         let action_tx = self.action_rx.take();
+        debug!("Starting client listener with name: {}", self.name);
         match (event_rx, action_tx) {
             (Some(event_rx), Some(action_tx)) => {
                 let task = Self::start_listen(event_rx, action_tx, self.name.clone());
                 let handle = tokio::spawn(task);
                 Ok(Some(handle))
             }
-            _ => Err(eyre!("Failed to get event or action channel")),
+            _ => {
+                error!("Failed to get event or action channel");
+                Err(eyre!("Failed to get event or action channel"))
+            }
         }
     }
     fn action_filter(&mut self, action: &action::Action) -> bool {

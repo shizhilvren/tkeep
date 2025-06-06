@@ -185,8 +185,8 @@ impl AppServer {
     }
 
     fn add_component(&mut self, component: Box<dyn Component>) -> Result<PID> {
-        debug!("Adding component");
         let id = self.get_unused_id();
+        debug!("Adding component {:?}", id);
         self.components.insert(id, (None, None, component));
         match self.components.get_mut(&id) {
             Some((sender, task, component)) => {
@@ -209,6 +209,7 @@ impl AppServer {
                         Err(color_eyre::eyre::eyre!("Failed to register task"))?;
                     }
                     None => {
+                        debug!("Starting component {:?}", id);
                         *task = component.run()?;
                     }
                 }
