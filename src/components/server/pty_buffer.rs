@@ -38,7 +38,7 @@ pub mod paser {
     use crossterm::Command;
     use std::{collections::VecDeque, fmt::Debug};
     use termwiz::escape::CSI;
-    use tracing::error;
+    use tracing::{debug, error};
 
     #[derive(Default)]
     pub struct Paser {
@@ -65,6 +65,7 @@ pub mod paser {
         now_point: CutPoint,
         cut_parts: VecDeque<PtyReplayBufferOne>,
         part: PtyReplayBufferOne,
+        history: u32,
     }
 
     #[derive(Debug, Clone)]
@@ -235,11 +236,12 @@ pub mod paser {
         }
     }
     impl PtyReplayBuffer {
-        pub fn new(cp: CutPoint) -> Self {
+        pub fn new(cp: CutPoint, history: u32) -> Self {
             Self {
                 part: PtyReplayBufferOne::new(&cp),
                 now_point: cp,
                 cut_parts: VecDeque::new(),
+                history,
             }
         }
         pub fn last_mut(&mut self) -> &mut PtyReplayBufferOne {
@@ -255,6 +257,11 @@ pub mod paser {
             let mut new_last = PtyReplayBufferOne::new(cp);
             std::mem::swap(&mut self.part, &mut new_last);
             self.cut_parts.push_back(new_last);
+            while self.lines_number() as u64 > self.history as u64 {
+                if let Some(part) = self.cut_parts.pop_front() {
+                    debug!("remove part: {}", part.len());
+                }
+            }
         }
         pub fn get_replay_buffer(&self) -> Vec<u8> {
             use crossterm::{ExecutableCommand, cursor};
@@ -324,10 +331,7 @@ pub mod paser {
                 .sum()
         }
         pub fn lines_number(&self) -> usize {
-            self.cut_parts
-                .iter()
-                .chain(std::iter::once(&self.part))
-                .count()
+            self.cut_parts.len().saturating_add(1)
         }
     }
     impl Debug for Paser {
@@ -347,11 +351,11 @@ pub mod paser {
 }
 
 impl PtyBuffer {
-    pub fn new(paser: paser::Paser) -> Self {
+    pub fn new(paser: paser::Paser, history: u32) -> Self {
         Self {
             event_tx: None,
             action_rx: None,
-            output_buf: paser::PtyReplayBuffer::new(paser.get_screen()),
+            output_buf: paser::PtyReplayBuffer::new(paser.get_screen(), history),
             paser: Some(paser),
         }
     }

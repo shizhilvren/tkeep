@@ -50,6 +50,10 @@ pub struct ServerCli {
     /// Args will pass to gdb append "--args", if you pass "--args <some options>" to this command, it will pass same one to gdb. Note: it cannoot use with "--"
     #[arg(long, value_name = "ARGS", num_args(2..), allow_hyphen_values(true))]
     pub args: Vec<String>,
+
+    /// set history size
+    #[arg(long, value_name = "SIZE", default_value_t = 10000_u32, value_parser = clap::value_parser!(u32).range(1000..1000000))]
+    pub history: u32,
     // /// Args pass to gdb which not change
     // #[arg(value_name = "GDB_ARGS", last(true), num_args(2..), allow_hyphen_values(true))]
     // gdb_args: Vec<String>,

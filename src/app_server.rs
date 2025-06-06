@@ -11,6 +11,7 @@ use crate::{
 use color_eyre::Result;
 use color_eyre::eyre::eyre;
 use std::collections::HashMap;
+use std::path::PathBuf;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::task::JoinHandle;
@@ -20,6 +21,8 @@ use tracing::{debug, error, info};
 pub struct AppServer {
     name: String,
     config: Config,
+    shell: String,
+    history: u32,
     components: HashMap<
         PID,
         (
@@ -35,13 +38,13 @@ pub struct AppServer {
 use crate::app_server;
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Event {
-    StartPty,
-    StartPtyBuffer,
+    StartPty { shell: String },
+    StartPtyBuffer { history: u32 },
     StartClinetListener(String),
 }
 
 impl AppServer {
-    pub fn new(name: String) -> Result<Self> {
+    pub fn new(name: String, shell: String, history: u32) -> Result<Self> {
         let (event_tx, event_rx) = mpsc::unbounded_channel();
         Ok(Self {
             components: HashMap::new(),
@@ -49,6 +52,8 @@ impl AppServer {
             event_rx,
             config: Config::new()?,
             name,
+            shell,
+            history,
         })
     }
 
@@ -118,9 +123,9 @@ impl AppServer {
 
     async fn handle_events(&mut self, event: event::Event) -> Result<(bool, Option<event::Event>)> {
         let next = match event {
-            s_event_e(s_event::App(app_server::Event::StartPty)) => {
+            s_event_e(s_event::App(app_server::Event::StartPty { shell })) => {
                 debug!("Received StartPty event");
-                self.add_component(Box::new(pty::Pty::new()))?;
+                self.add_component(Box::new(pty::Pty::new(shell)))?;
                 (false, None)
             }
             s_event_e(s_event::App(app_server::Event::StartClinetListener(name))) => {
@@ -128,9 +133,9 @@ impl AppServer {
                 self.add_component(Box::new(client_listener::ClinetListener::new(name)))?;
                 (false, None)
             }
-            s_event_e(s_event::App(app_server::Event::StartPtyBuffer)) => {
+            s_event_e(s_event::App(app_server::Event::StartPtyBuffer { history })) => {
                 let paser = pty_buffer::paser::Paser::new(tool::TTY_SIZE.0, tool::TTY_SIZE.1);
-                self.add_component(Box::new(pty_buffer::PtyBuffer::new(paser)))?;
+                self.add_component(Box::new(pty_buffer::PtyBuffer::new(paser, history)))?;
                 (false, None)
             }
             s_event_e(s_event::ClinetListener(client_listener::Event::NewClient(stream))) => {
@@ -150,9 +155,13 @@ impl AppServer {
 
     fn init(&self) -> Result<()> {
         self.event_tx
-            .send(s_event_e(s_event::App(app_server::Event::StartPty)))?;
+            .send(s_event_e(s_event::App(app_server::Event::StartPty {
+                shell: self.shell.clone(),
+            })))?;
         self.event_tx
-            .send(s_event_e(s_event::App(app_server::Event::StartPtyBuffer)))?;
+            .send(s_event_e(s_event::App(app_server::Event::StartPtyBuffer {
+                history: self.history,
+            })))?;
         self.event_tx.send(s_event_e(s_event::App(
             app_server::Event::StartClinetListener(self.name.clone()),
         )))?;

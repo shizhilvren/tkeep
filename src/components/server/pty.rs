@@ -8,6 +8,7 @@ use crate::{action, event};
 use color_eyre::{Result, eyre::eyre};
 use portable_pty::{CommandBuilder, ExitStatus, PtySize, native_pty_system};
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 use std::{option::Option, str::FromStr};
 use strum::Display;
 use tokio::io::AsyncReadExt;
@@ -35,11 +36,16 @@ pub enum Event {
 pub struct Pty {
     event_tx: Option<UnboundedSender<event::Event>>,
     action_rx: Option<UnboundedReceiver<action::Action>>,
+    shell: String,
 }
 
 impl Pty {
-    pub fn new() -> Self {
-        Pty::default()
+    pub fn new(shell: String) -> Self {
+        Self {
+            event_tx: None,
+            action_rx: None,
+            shell: shell,
+        }
     }
     async fn handle_action(
         action: Option<action::Action>,
@@ -127,6 +133,7 @@ impl Pty {
     async fn start_pty(
         mut event_tx: UnboundedSender<event::Event>,
         mut action_rx: UnboundedReceiver<action::Action>,
+        shell: String,
     ) -> Result<()> {
         let pty_system = native_pty_system();
         let mut pair = pty_system
@@ -142,7 +149,7 @@ impl Pty {
                 pixel_height: tool::TTY_SIZE.3,
             })
             .map_err(|e| eyre!(format!("{:?}", e)))?;
-        let args = ["bash"]
+        let args = [shell.as_str()]
             .iter()
             .copied()
             .map(|s| -> Result<std::ffi::OsString> { Ok(std::ffi::OsString::from_str(s)?) })
@@ -210,7 +217,7 @@ impl Component for Pty {
         let action_tx = self.action_rx.take();
         match (event_rx, action_tx) {
             (Some(event_rx), Some(action_tx)) => {
-                let task = Self::start_pty(event_rx, action_tx);
+                let task = Self::start_pty(event_rx, action_tx, self.shell.clone());
                 let handle = tokio::spawn(task);
                 Ok(Some(handle))
             }

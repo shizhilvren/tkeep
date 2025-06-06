@@ -8,7 +8,7 @@ async fn main() -> Result<()> {
     tkeep::logging::init()?;
     println!("Hello, world!");
     debug!("this is a debug message");
-    let mut app = tkeep::app_server::AppServer::new("test".to_string())?;
+    let mut app = tkeep::app_server::AppServer::new("test".to_string(),"bash".to_string(),1000)?;
     app.run().await?;
     Ok(())
 }

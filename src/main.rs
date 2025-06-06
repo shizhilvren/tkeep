@@ -16,7 +16,7 @@ async fn main() -> Result<()> {
     debug!("tkeep args are {:?}", &args);
     match args.command {
         cli::CliSubCommand::New(server_args) => {
-            start_server(server_args.name).await?;
+            start_server(server_args.name, server_args.shell, server_args.history).await?;
         }
         cli::CliSubCommand::Attach(client_args) => {
             let mut client_app = AppClient::new(client_args.name)?;
@@ -26,7 +26,7 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-pub async fn start_server(name: String) -> Result<()> {
+pub async fn start_server(name: String, shell: String, history: u32) -> Result<()> {
     let stdout = File::create(format!("/tmp/{}.tkeep.out", &name))?;
     let stderr = File::create(format!("/tmp/{}.tkeep.err", &name))?;
     let daemonize = Daemonize::new()
@@ -38,7 +38,7 @@ pub async fn start_server(name: String) -> Result<()> {
 
     match daemonize.start() {
         Ok(_) => {
-            let mut server_app = AppServer::new(name)?;
+            let mut server_app = AppServer::new(name, shell, history)?;
             server_app.run().await?;
             Ok(())
         }
