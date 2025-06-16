@@ -47,7 +47,7 @@ fn start_server(name: String, shell: String, history: u32) -> Result<()> {
 
     match daemonize.start() {
         Ok(_) => {
-            let run_time = tokio::runtime::Builder::new_multi_thread()
+            let run_time = tokio::runtime::Builder::new_current_thread()
                 // .worker_threads(2)
                 .enable_all()
                 .build()?;

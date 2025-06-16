@@ -112,7 +112,7 @@ pub mod paser {
                     };
                 let is_cut = mean.is_newline();
                 let cut_point = match (is_cut, alternate_screen) {
-                    (true, false) => Some(CutLinePoint::new(&CutPoint(screen.clone()))),
+                    (true, false) => Some(CutLinePoint::new(screen)),
                     _ => None,
                 };
                 // let cut_point = None;
@@ -224,11 +224,11 @@ pub mod paser {
         }
     }
     impl CutLinePoint {
-        pub fn new(cp: &CutPoint) -> Self {
+        pub fn new(cp: &vt100::Screen) -> Self {
             Self {
-                attributes_formatted: cp.0.attributes_formatted().into(),
-                input_mode_formatted: cp.0.input_mode_formatted().into(),
-                title_formatted: cp.0.title_formatted().into(),
+                attributes_formatted: cp.attributes_formatted().into(),
+                input_mode_formatted: cp.input_mode_formatted().into(),
+                title_formatted: cp.title_formatted().into(),
             }
         }
         pub fn get_screen(&self) -> Bytes {
@@ -244,7 +244,7 @@ pub mod paser {
     impl PtyReplayBuffer {
         pub fn new(cp: CutPoint, history: u32) -> Self {
             Self {
-                part: PtyReplayBufferOne::new(CutLinePoint::new(&cp)),
+                part: PtyReplayBufferOne::new(CutLinePoint::new(&cp.0)),
                 now_point: cp,
                 cut_parts: VecDeque::new(),
                 history,
