@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use super::super::Component;
 use super::input;
 use crate::action::Action::Clinet as c_action_e;
@@ -90,8 +88,7 @@ impl Worker {
         mut action_rx: UnboundedReceiver<action::Action>,
         name: String,
     ) -> Result<()> {
-        let socket_path = PathBuf::from(format!("/tmp/{}.tkeep.sock", name));
-        let uds = UnixStream::connect(socket_path).await;
+        let uds = UnixStream::connect(tool::CFG.sock(&name)).await;
         let mut uds = match uds {
             Err(e) => {
                 event_tx.send(c_event_e(c_event::Worker(Event::Stop {

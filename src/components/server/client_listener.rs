@@ -6,7 +6,7 @@ use crate::action::Action::Server as s_action_e;
 use crate::action::server::Action as s_action;
 use crate::event::Event::Server as s_event_e;
 use crate::event::server::Event as s_event;
-use crate::{action, event};
+use crate::{action, event, tool};
 use bincode::{Decode, Encode};
 use color_eyre::{Result, eyre::eyre};
 use std::option::Option;
@@ -63,7 +63,8 @@ impl ClinetListener {
         name: String,
     ) -> Result<()> {
         let event_tx = event_tx;
-        let path = PathBuf::from(format!("/tmp/{}.tkeep.sock", name));
+        
+        let path = PathBuf::from(tool::CFG.sock(&name));
         debug!("Starting client listener on {:?}", path);
         let _ = std::fs::remove_file(&path);
         let listener = match UnixListener::bind(&path) {

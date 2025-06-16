@@ -1,11 +1,56 @@
+use lazy_static::lazy_static;
+
 pub const BUF_SIZE: usize = 4096;
 pub const TTY_SIZE: (u16, u16, u16, u16) = (24, 80, 0, 0);
-pub const TKEEP_SERVER_PTY_NAME : &str = "TKEEP_SERVER_PTY_NAME";
+pub const TKEEP_SERVER_PTY_NAME: &str = "TKEEP_SERVER_PTY_NAME";
+
+lazy_static! {
+    pub static ref CFG: config::Config = config::Config::new().expect("Failed to create config");
+}
+
+pub mod config {
+    use directories::BaseDirs;
+    use color_eyre::Result;
+    use std::path::PathBuf;
+    use lazy_static::lazy_static;
+
+    lazy_static! {
+        pub static ref TKEEP_PROJ_DIR: BaseDirs = BaseDirs::new().unwrap();
+    }
+    pub struct Config {
+        dir: PathBuf,
+    }
+
+    impl Config {
+        pub fn new() -> Result<Self> {
+            let dir = TKEEP_PROJ_DIR
+                .runtime_dir()
+                .map_or_else(|| TKEEP_PROJ_DIR.home_dir(), |v| v)
+                .to_path_buf()
+                .join(env!("CARGO_PKG_NAME"))
+                .join(env!("CARGO_PKG_VERSION"));
+            std::fs::create_dir_all(&dir)?;
+            Ok(Self { dir: dir })
+        }
+        pub fn stdout(&self, name: &String) -> PathBuf {
+            self.dir.join(format!("{}.out", name))
+        }
+        pub fn stderr(&self, name: &String) -> PathBuf {
+            self.dir.join(format!("{}.err", name))
+        }
+        pub fn sock(&self, name: &String) -> PathBuf {
+            self.dir.join(format!("{}.sock", name))
+        }
+        pub fn pid(&self, name: &String) -> PathBuf {
+            self.dir.join(format!("{}.pid", name))
+        }
+    }
+}
 
 pub mod unix_socket {
     use bincode::{self, Decode, Encode};
     use bytes::{Buf, BytesMut};
-    use color_eyre::{Result, eyre::eyre};
+    use color_eyre::eyre::{eyre, Result};
     use std::fmt::Debug;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::UnixStream;

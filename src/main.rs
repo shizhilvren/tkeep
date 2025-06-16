@@ -1,6 +1,7 @@
 use clap::Parser;
 use color_eyre::{Result, eyre::eyre};
 use daemonize::Daemonize;
+use tkeep::tool;
 use std::{env, fs::File};
 use tkeep::app_client::AppClient;
 use tkeep::app_server::AppServer;
@@ -36,13 +37,14 @@ fn main() -> Result<()> {
 }
 
 fn start_server(name: String, shell: String, history: u32) -> Result<()> {
-    let stdout = File::create(format!("/tmp/{}.tkeep.out", &name))?;
-    let stderr = File::create(format!("/tmp/{}.tkeep.err", &name))?;
+    println!("starting session {}.\n", &name);
+    let stdout = File::create(tool::CFG.stdout(&name))?;
+    let stderr = File::create(tool::CFG.stderr(&name))?;
     let daemonize = Daemonize::new()
-        .pid_file(format!("/tmp/{}.tkeep.pid", &name)) // Every method except `new` and `start`
+        .pid_file(tool::CFG.pid(&name)) // Every method except `new` and `start`
         .working_directory(env::current_dir()?) // for default behaviour.
-        .stdout(stdout) // Redirect stdout to `/tmp/daemon.out`.
-        .stderr(stderr) // Redirect stderr to `/tmp/daemon.err`.
+        .stdout(stdout) 
+        .stderr(stderr) 
         .privileged_action(|| "Executed before drop privileges");
 
     match daemonize.start() {
