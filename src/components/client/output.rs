@@ -10,8 +10,6 @@ use color_eyre::{Result, eyre::eyre};
 use crossterm::execute;
 use serde::{Deserialize, Serialize};
 use std::io::Write;
-use std::thread::sleep;
-use std::time::Duration;
 use strum::Display;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tracing::error;

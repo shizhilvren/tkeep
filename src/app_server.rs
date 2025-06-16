@@ -11,7 +11,6 @@ use crate::{
 use color_eyre::Result;
 use color_eyre::eyre::eyre;
 use std::collections::HashMap;
-use std::path::PathBuf;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::task::JoinHandle;

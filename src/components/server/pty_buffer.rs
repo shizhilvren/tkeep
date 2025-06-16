@@ -7,7 +7,7 @@ use crate::components::server::worker;
 use crate::event::Event::Server as s_event_e;
 use crate::event::server::Event as s_event;
 use crate::{action, event};
-use bytes::{BufMut, Bytes};
+use bytes::Bytes;
 use color_eyre::{Result, eyre::eyre};
 use strum::Display;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
@@ -34,10 +34,11 @@ pub struct PtyBuffer {
 }
 
 pub mod paser {
-    use bytes::{BufMut, Bytes, BytesMut, buf};
+    use bytes::{BufMut, Bytes, BytesMut};
     use crossterm::Command;
-    use std::{collections::VecDeque, fmt::Debug, io::Read};
+    use std::{collections::VecDeque, fmt::Debug};
     use termwiz::escape::CSI;
+    #[allow(unused_imports)]
     use tracing::{debug, error, trace};
 
     #[derive(Default)]

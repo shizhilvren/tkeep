@@ -8,7 +8,6 @@ use crate::{action, event};
 use color_eyre::{Result, eyre::eyre};
 use portable_pty::{CommandBuilder, ExitStatus, PtySize, native_pty_system};
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
 use std::{option::Option, str::FromStr};
 use strum::Display;
 use tokio::io::AsyncReadExt;
