@@ -1,5 +1,6 @@
 pub const BUF_SIZE: usize = 4096;
 pub const TTY_SIZE: (u16, u16, u16, u16) = (24, 80, 0, 0);
+pub const TKEEP_SERVER_PTY_NAME : &str = "TKEEP_SERVER_PTY_NAME";
 
 pub mod unix_socket {
     use bincode::{self, Decode, Encode};

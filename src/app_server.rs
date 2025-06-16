@@ -37,7 +37,7 @@ pub struct AppServer {
 use crate::app_server;
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Event {
-    StartPty { shell: String },
+    StartPty { shell: String, name: String },
     StartPtyBuffer { history: u32 },
     StartClinetListener(String),
 }
@@ -122,9 +122,9 @@ impl AppServer {
 
     async fn handle_events(&mut self, event: event::Event) -> Result<(bool, Option<event::Event>)> {
         let next = match event {
-            s_event_e(s_event::App(app_server::Event::StartPty { shell })) => {
+            s_event_e(s_event::App(app_server::Event::StartPty { shell, name })) => {
                 debug!("Received StartPty event");
-                self.add_component(Box::new(pty::Pty::new(shell)))?;
+                self.add_component(Box::new(pty::Pty::new(shell, name)))?;
                 (false, None)
             }
             s_event_e(s_event::App(app_server::Event::StartClinetListener(name))) => {
@@ -156,6 +156,7 @@ impl AppServer {
         self.event_tx
             .send(s_event_e(s_event::App(app_server::Event::StartPty {
                 shell: self.shell.clone(),
+                name: self.name.clone(),
             })))?;
         self.event_tx
             .send(s_event_e(s_event::App(app_server::Event::StartPtyBuffer {

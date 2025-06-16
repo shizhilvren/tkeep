@@ -36,14 +36,16 @@ pub struct Pty {
     event_tx: Option<UnboundedSender<event::Event>>,
     action_rx: Option<UnboundedReceiver<action::Action>>,
     shell: String,
+    name: String,
 }
 
 impl Pty {
-    pub fn new(shell: String) -> Self {
+    pub fn new(shell: String, name: String) -> Self {
         Self {
             event_tx: None,
             action_rx: None,
             shell: shell,
+            name,
         }
     }
     async fn handle_action(
@@ -133,6 +135,7 @@ impl Pty {
         mut event_tx: UnboundedSender<event::Event>,
         mut action_rx: UnboundedReceiver<action::Action>,
         shell: String,
+        name: String,
     ) -> Result<()> {
         let pty_system = native_pty_system();
         let mut pair = pty_system
@@ -158,6 +161,7 @@ impl Pty {
         // Spawn a shell into the pty
         let mut cmd = CommandBuilder::from_argv(args);
         cmd.cwd(cwd);
+        cmd.env(tool::TKEEP_SERVER_PTY_NAME, name);
         debug!("gdb tty start cwd id {:?}", &cmd.get_cwd());
         let child = pair
             .slave
@@ -216,7 +220,8 @@ impl Component for Pty {
         let action_tx = self.action_rx.take();
         match (event_rx, action_tx) {
             (Some(event_rx), Some(action_tx)) => {
-                let task = Self::start_pty(event_rx, action_tx, self.shell.clone());
+                let task =
+                    Self::start_pty(event_rx, action_tx, self.shell.clone(), self.name.clone());
                 let handle = tokio::spawn(task);
                 Ok(Some(handle))
             }

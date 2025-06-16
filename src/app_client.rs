@@ -11,9 +11,12 @@ use crate::config;
 use crate::event;
 use crate::event::Event::Client as c_event_e;
 use crate::event::client::Event as c_event;
+use crate::tool;
 use color_eyre::Result;
+use color_eyre::eyre::eyre;
 use config::Config;
 use std::collections::HashMap;
+use std::env;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::task::JoinHandle;
@@ -149,6 +152,21 @@ impl AppClient {
             .send(c_event_e(c_event::Worker(worker::Event::Start(
                 self.name.clone(),
             ))))?;
+        match env::var(tool::TKEEP_SERVER_PTY_NAME) {
+            Ok(name) => {
+                debug!("trying to attach '{}' in server pty '{}' ", self.name, name);
+                if name == self.name {
+                    debug!("Server pty name is the same as client name, using default");
+                    Err(eyre!(format!(
+                        "You are trying to attach to the current session (\"{}\"). This is not supported.",
+                        name
+                    )))?;
+                }
+            }
+            Err(_) => {
+                debug!("No server pty name set, using default");
+            }
+        }
         Ok(())
     }
 
