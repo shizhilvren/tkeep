@@ -5,6 +5,7 @@ edition = "2024"
 build = "build.rs"
 default-run = "tkeep"
 description = "TKEEP is a session keep tool"
+readme = "README.md"
 authors = [
     "shizhilvren <shizhilvren@foxmail.com>",
     "Benjamin Shi <aiifabbf@outlook.com>",
