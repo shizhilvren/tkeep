@@ -38,14 +38,14 @@ jobs:
             package-name: "musl"
             use-cross: false
             binary-name: tkeep
-          - os: ubuntu-latest
-            os-name: linux
-            target: aarch64-unknown-linux-musl
-            architecture: arm64
-            binary-postfix: ""
-            use-cross: true
-            package-name: "musl"
-            binary-name: tkeep
+          # - os: ubuntu-latest
+          #   os-name: linux
+          #   target: aarch64-unknown-linux-musl
+          #   architecture: arm64
+          #   binary-postfix: ""
+          #   use-cross: true
+          #   package-name: "musl"
+          #   binary-name: tkeep
           - os: ubuntu-latest 
             os-name: linux
             target: i686-unknown-linux-musl
