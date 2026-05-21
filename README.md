@@ -48,6 +48,14 @@ cargo build --release
 tkeep new my-session
 ```
 
+By default, this starts the server and attaches immediately.
+
+If you only want to start in background without attaching:
+
+```bash
+tkeep new my-session --no-attach
+```
+
 Alias form:
 
 ```bash
@@ -91,6 +99,7 @@ Options:
   -s, --shell <SHELL> Shell binary to run (default: bash)
       --args <ARGS>   Extra args passed to shell command
       --history <SIZE>  History buffer size (default: 10000)
+      --no-attach    Only start server, do not attach
   -h, --help          Print help
 ```
 
@@ -102,6 +111,10 @@ tkeep new work -s zsh
 
 # Increase history buffer
 tkeep new logs --history 50000
+
+# Start server only, attach later
+tkeep new ci --no-attach
+tkeep attach ci
 ```
 
 ### `tkeep attach`

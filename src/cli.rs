@@ -3,7 +3,6 @@ use clap::Args;
 use clap::Parser;
 use clap::Subcommand;
 use clap::builder::styling::{self, AnsiColor};
-use clap::command;
 
 const STYLES: styling::Styles = styling::Styles::styled()
     .header(AnsiColor::Yellow.on_default())
@@ -54,6 +53,10 @@ pub struct ServerCli {
     /// set history size
     #[arg(long, value_name = "SIZE", default_value_t = 10000_u32, value_parser = clap::value_parser!(u32).range(1000..1000000))]
     pub history: u32,
+
+    /// only start server, do not attach it
+    #[arg(long)]
+    pub no_attach: bool,
     // /// Args pass to gdb which not change
     // #[arg(value_name = "GDB_ARGS", last(true), num_args(2..), allow_hyphen_values(true))]
     // gdb_args: Vec<String>,
