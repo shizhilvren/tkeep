@@ -32,6 +32,7 @@ pub struct AppServer {
     >,
     event_tx: mpsc::UnboundedSender<event::Event>,
     event_rx: mpsc::UnboundedReceiver<event::Event>,
+    inited: bool,
 }
 
 use crate::app_server;
@@ -53,61 +54,68 @@ impl AppServer {
             name,
             shell,
             history,
+            inited: false,
         })
     }
 
-    pub async fn run(&mut self) -> Result<()> {
-        self.init()?;
-        loop {
-            let event = self.event_rx.recv().await;
-            debug!("Received event: {:?}", event);
-            match event {
-                Some(event) => {
-                    let (flag, event) = self.handle_events(event).await?;
-                    if let Some(event) = event {
-                        let actions = self.components.iter_mut().fold(
-                            vec![],
-                            |mut acc, (id, (_, _, component))| {
-                                let actions = component.handle_events(&event);
-                                match actions {
-                                    Ok(actions) => acc.extend(actions),
-                                    Err(e) => {
-                                        error!(
-                                            "Failed to handle event {:?} in component {:?}: {}",
-                                            event, id, e
-                                        );
-                                    }
+    pub async fn run_one(&mut self) -> Result<bool> {
+        let event = self.event_rx.recv().await;
+        debug!("Received event: {:?}", event);
+        match event {
+            Some(event) => {
+                let (flag, event) = self.handle_events(event).await?;
+                if let Some(event) = event {
+                    let actions = self.components.iter_mut().fold(
+                        vec![],
+                        |mut acc, (id, (_, _, component))| {
+                            let actions = component.handle_events(&event);
+                            match actions {
+                                Ok(actions) => acc.extend(actions),
+                                Err(e) => {
+                                    error!(
+                                        "Failed to handle event {:?} in component {:?}: {}",
+                                        event, id, e
+                                    );
                                 }
-                                acc
-                            },
-                        );
+                            }
+                            acc
+                        },
+                    );
 
-                        actions.iter().for_each(|action| {
-                            debug!("Received action {:?}", action);
-                            self.components
-                                .iter_mut()
-                                .for_each(|(id, (sander, _, component))| {
-                                    match (sander, component.action_filter(action)) {
-                                        (Some(sander), true) => match sander.send(action.clone()) {
-                                            Err(e) => error!(
-                                                "Failed to send action {:?} to component {:?}: {}",
-                                                action, id, e
-                                            ),
-                                            _ => {}
-                                        },
+                    actions.iter().for_each(|action| {
+                        debug!("Received action {:?}", action);
+                        self.components
+                            .iter_mut()
+                            .for_each(|(id, (sander, _, component))| {
+                                match (sander, component.action_filter(action)) {
+                                    (Some(sander), true) => match sander.send(action.clone()) {
+                                        Err(e) => error!(
+                                            "Failed to send action {:?} to component {:?}: {}",
+                                            action, id, e
+                                        ),
                                         _ => {}
-                                    };
-                                });
-                        });
-                    }
-                    if flag {
-                        break;
-                    }
+                                    },
+                                    _ => {}
+                                };
+                            });
+                    });
                 }
-                None => {
-                    error!("Failed to receive event");
-                    return Err(color_eyre::eyre::eyre!("Failed to receive event"));
+                if flag {
+                    return Ok(true);
                 }
+            }
+            None => {
+                error!("Failed to receive event");
+                return Err(color_eyre::eyre::eyre!("Failed to receive event"));
+            }
+        }
+        Ok(false)
+    }
+    pub async fn run(&mut self) -> Result<()> {
+        assert_eq!(self.inited, true);
+        loop {
+            if self.run_one().await? {
+                break;
             }
         }
         for (id, (_, task, _)) in self.components.iter_mut() {
@@ -152,7 +160,10 @@ impl AppServer {
         Ok(next)
     }
 
-    fn init(&self) -> Result<()> {
+    pub fn init(self) -> Result<Self> {
+        self.event_tx.send(s_event_e(s_event::App(
+            app_server::Event::StartClinetListener(self.name.clone()),
+        )))?;
         self.event_tx
             .send(s_event_e(s_event::App(app_server::Event::StartPty {
                 shell: self.shell.clone(),
@@ -162,11 +173,10 @@ impl AppServer {
             .send(s_event_e(s_event::App(app_server::Event::StartPtyBuffer {
                 history: self.history,
             })))?;
-        self.event_tx.send(s_event_e(s_event::App(
-            app_server::Event::StartClinetListener(self.name.clone()),
-        )))?;
         debug!("Sent StartPty event");
-        Ok(())
+        let mut ans = self;
+        ans.inited = true;
+        Ok(ans)
     }
 
     fn get_unused_id(&self) -> PID {
