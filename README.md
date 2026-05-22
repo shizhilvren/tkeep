@@ -84,6 +84,7 @@ Usage: tkeep [COMMAND]
 Commands:
   new     Create a new terminal session
   attach  Attach to an existing terminal session
+  ls      List all active terminal sessions
   help    Print this message or the help of the given subcommand(s)
 ```
 
@@ -128,6 +129,39 @@ Arguments:
 Options:
   -r, --replay  Replay history when attaching
   -h, --help    Print help
+```
+
+### `tkeep ls`
+
+```text
+Usage: tkeep ls
+
+Aliases:
+  l
+```
+
+Examples:
+
+```bash
+# List all active sessions
+tkeep ls
+
+# Alias form
+tkeep l
+```
+
+Example output:
+
+```text
+Active sessions:
+- build
+- work
+```
+
+If there are no active sessions:
+
+```text
+No active sessions found.
 ```
 
 ## Runtime Files
