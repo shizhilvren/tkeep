@@ -9,10 +9,10 @@ lazy_static! {
 }
 
 pub mod config {
-    use directories::BaseDirs;
     use color_eyre::Result;
-    use std::path::PathBuf;
+    use directories::BaseDirs;
     use lazy_static::lazy_static;
+    use std::path::PathBuf;
 
     lazy_static! {
         pub static ref TKEEP_PROJ_DIR: BaseDirs = BaseDirs::new().unwrap();
@@ -44,13 +44,16 @@ pub mod config {
         pub fn pid(&self, name: &String) -> PathBuf {
             self.dir.join(format!("{}.pid", name))
         }
+        pub fn dir(&self) -> &PathBuf {
+            &self.dir
+        }
     }
 }
 
 pub mod unix_socket {
     use bincode::{self, Decode, Encode};
     use bytes::{Buf, BytesMut};
-    use color_eyre::eyre::{eyre, Result};
+    use color_eyre::eyre::{Result, eyre};
     use std::fmt::Debug;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::UnixStream;

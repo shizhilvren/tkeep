@@ -33,6 +33,10 @@ pub enum CliSubCommand {
     /// Attach to an existing terminal session
     #[command(visible_alias = "a")]
     Attach(ClientCli),
+
+    /// List all terminal sessions
+    #[command(visible_alias = "l")]
+    Ls,
 }
 
 /// Create a new terminal session

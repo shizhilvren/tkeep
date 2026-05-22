@@ -8,7 +8,7 @@ use std::{env, fs::File};
 use tkeep::app_client::AppClient;
 use tkeep::app_server::AppServer;
 use tkeep::cli::{self, Cli};
-use tkeep::tool;
+use tkeep::{app_ls, tool};
 use tracing::debug;
 
 fn main() -> Result<()> {
@@ -29,6 +29,9 @@ fn main() -> Result<()> {
         }
         cli::CliSubCommand::Attach(client_args) => {
             start_client(client_args.name)?;
+        }
+        cli::CliSubCommand::Ls => {
+            ls_sesssions()?;
         }
     }
     Ok(())
@@ -125,5 +128,19 @@ fn start_client(name: String) -> Result<()> {
                 Err(e) => Err(eyre!("Error running client: {}", e)),
             }
         })?;
+    Ok(())
+}
+
+fn ls_sesssions() -> Result<()> {
+    let mut sessions = app_ls::get_all_sessions(&tool::CFG.dir())?;
+    sessions.sort();
+    if sessions.is_empty() {
+        println!("No active sessions found.");
+    } else {
+        println!("Active sessions:");
+        for session in sessions {
+            println!("- {}", session);
+        }
+    }
     Ok(())
 }
