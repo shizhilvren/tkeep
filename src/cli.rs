@@ -47,7 +47,7 @@ pub struct ServerCli {
     pub name: String,
 
     /// Set which gdb debugger to use.
-    #[arg(short('s'), long, value_name = "SHELL", default_value_t = String::from("bash"), value_parser = shell_check)]
+    #[arg(short('s'), long, value_name = "SHELL", default_value_t = env!("SHELL").to_string(), value_parser = shell_check)]
     pub shell: String,
 
     /// Args will pass to gdb append "--args", if you pass "--args <some options>" to this command, it will pass same one to gdb. Note: it cannoot use with "--"
