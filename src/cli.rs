@@ -39,6 +39,10 @@ pub enum CliSubCommand {
     Ls,
 }
 
+fn get_shell() -> String {
+    std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string())
+}
+
 /// Create a new terminal session
 #[derive(Args, Debug)]
 pub struct ServerCli {
@@ -47,7 +51,7 @@ pub struct ServerCli {
     pub name: String,
 
     /// Set which gdb debugger to use.
-    #[arg(short('s'), long, value_name = "SHELL", default_value_t = env!("SHELL").to_string(), value_parser = shell_check)]
+    #[arg(short('s'), long, value_name = "SHELL", default_value_t = get_shell(), value_parser = shell_check)]
     pub shell: String,
 
     /// Args will pass to gdb append "--args", if you pass "--args <some options>" to this command, it will pass same one to gdb. Note: it cannoot use with "--"
