@@ -41,6 +41,10 @@ pub enum CliSubCommand {
     /// Show whether the current shell is running inside a tkeep session
     #[command(visible_alias = "w")]
     Where,
+
+    /// Terminate a running terminal session
+    #[command(visible_alias = "k")]
+    Kill(KillCli),
 }
 
 fn get_shell() -> String {
@@ -72,6 +76,18 @@ pub struct ServerCli {
     // /// Args pass to gdb which not change
     // #[arg(value_name = "GDB_ARGS", last(true), num_args(2..), allow_hyphen_values(true))]
     // gdb_args: Vec<String>,
+}
+
+/// Terminate a running terminal session
+#[derive(Args, Debug)]
+pub struct KillCli {
+    /// Name of the session to terminate
+    #[arg(index = 1, value_name = "NAME", required = true)]
+    pub name: String,
+
+    /// Force kill the session using SIGKILL instead of SIGTERM
+    #[arg(short('f'), long)]
+    pub force: bool,
 }
 
 /// Attach to an existing terminal session

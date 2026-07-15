@@ -21,6 +21,7 @@ fn main() -> Result<()> {
         cli::CliSubCommand::Attach(client_args) => commands::attach::run(client_args.name)?,
         cli::CliSubCommand::Ls => commands::ls::run()?,
         cli::CliSubCommand::Where => commands::where_cmd::run()?,
+        cli::CliSubCommand::Kill(kill_args) => commands::kill::run(kill_args.name, kill_args.force)?,
     }
     Ok(())
 }
