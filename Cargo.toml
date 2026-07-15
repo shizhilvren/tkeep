@@ -1,6 +1,6 @@
 [package]
 name = "tkeep"
-version = "0.1.5"
+version = "0.1.6"
 edition = "2024"
 build = "build.rs"
 default-run = "tkeep"
@@ -17,13 +17,13 @@ exclude = ["doc/*", "test/*", ".github/*"]
 categories = ["command-line-utilities", "development-tools"]
 keywords = ["terminal-multiplexer", "cli"]
 
-[[bin]]
-name = "tclient"
-path = "src/bin/tclient.rs"
+# [[bin]]
+# name = "tclient"
+# path = "src/bin/tclient.rs"
 
-[[bin]]
-name = "tserver"
-path = "src/bin/tserver.rs"
+# [[bin]]
+# name = "tserver"
+# path = "src/bin/tserver.rs"
 
 [[bin]]
 name = "tkeep"

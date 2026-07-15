@@ -1,195 +1,92 @@
 # tkeep
 
-`tkeep` is a terminal session keep-alive tool.
+`tkeep` is a lightweight terminal session keep-alive tool. It keeps a shell session running in the background and lets you re-attach later, without the learning cost of a full multiplexer.
 
-It keeps your shell session alive in the background and lets you re-attach later, while still behaving like a normal terminal experience.
+- Persistent shell sessions you can re-attach by name.
+- Native terminal scrolling — no pane/window multiplexing.
+- Simple subcommands, no keybindings to memorize.
+- Terminal output history is replayed on attach.
 
-Unlike terminal multiplexers such as `tmux` or `zellij`, `tkeep` does not focus on pane/window multiplexing. It focuses on session persistence and uses native terminal scrolling behavior, so you can keep your usual terminal habits.
-
-You also do not need to memorize keybindings or command modes. This reduces learning cost and makes `tkeep` easier to adopt for users who only want persistent sessions.
-
-## Why tkeep
-
-- Keep long-running shell sessions alive in background.
-- Re-attach by session name from another terminal.
-- Use native terminal scrolling experience instead of multiplexer-style pane/window management.
-- No key mapping memorization required; use simple subcommands only.
-- Preserve terminal output history for replay on attach.
-- Lightweight command-line workflow.
-
-## Positioning
-
-`tkeep` is not a replacement for full-featured multiplexers.
-
-- Prefer your terminal emulator's native split feature; choose `tmux`/`zellij` only when you need advanced session orchestration.
-- If you mainly need "keep this terminal session alive and re-attach later" with minimal cognitive load, `tkeep` is designed for that workflow.
+For pane/window multiplexing, use `tmux` or `zellij`; use `tkeep` when you just want "keep this session alive and come back later".
 
 ## Installation
 
-### Install from crates.io
-
 ```bash
+# From crates.io
 cargo install tkeep
-```
 
-### Build from source
-
-```bash
+# From source
 git clone https://github.com/shizhilvren/tkeep.git
-cd tkeep
-cargo build --release
+cd tkeep && cargo build --release
 ```
 
 ## Quick Start
 
-### 1) Start a new session
+```bash
+tkeep new build          # start a session and attach
+# ...close terminal / lose SSH at any time...
+tkeep attach build       # re-attach later
+tkeep ls                 # list active sessions
+```
+
+Every subcommand has a single-letter alias: `n`, `a`, `l`, `w`, `k`.
+
+## Commands
+
+### `tkeep new <NAME>` (alias `n`)
+
+Create a new session and attach to it.
+
+| Option | Description |
+| --- | --- |
+| `-s, --shell <SHELL>` | Shell binary to run (default: `$SHELL`) |
+| `--args <ARGS>...` | Extra args passed to the shell |
+| `--history <SIZE>` | History buffer size (default: `10000`) |
+| `--no-attach` | Start the server only; don't attach |
 
 ```bash
-tkeep new my-session
-```
-
-By default, this starts the server and attaches immediately.
-
-If you only want to start in background without attaching:
-
-```bash
-tkeep new my-session --no-attach
-```
-
-Alias form:
-
-```bash
-tkeep n my-session
-```
-
-### 2) Attach to the session
-
-```bash
-tkeep attach my-session
-```
-
-Alias form:
-
-```bash
-tkeep a my-session
-```
-
-## Command Usage
-
-### `tkeep`
-
-```text
-Usage: tkeep [COMMAND]
-
-Commands:
-  new     Create a new terminal session
-  attach  Attach to an existing terminal session
-  ls      List all active terminal sessions
-  help    Print this message or the help of the given subcommand(s)
-```
-
-### `tkeep new`
-
-```text
-Usage: tkeep new [OPTIONS] <NAME>
-
-Arguments:
-  <NAME>              Session name
-
-Options:
-  -s, --shell <SHELL> Shell binary to run (default: bash)
-      --args <ARGS>   Extra args passed to shell command
-      --history <SIZE>  History buffer size (default: 10000)
-      --no-attach    Only start server, do not attach
-  -h, --help          Print help
-```
-
-Examples:
-
-```bash
-# Start with zsh
 tkeep new work -s zsh
-
-# Increase history buffer
 tkeep new logs --history 50000
-
-# Start server only, attach later
-tkeep new ci --no-attach
-tkeep attach ci
+tkeep new ci --no-attach && tkeep attach ci
 ```
 
-### `tkeep attach`
+### `tkeep attach <NAME>` (alias `a`)
 
-```text
-Usage: tkeep attach [OPTIONS] <NAME>
+Attach to an existing session. `-r/--replay` (default on) replays the history buffer.
 
-Arguments:
-  <NAME>      Session name
+### `tkeep ls` (alias `l`)
 
-Options:
-  -r, --replay  Replay history when attaching
-  -h, --help    Print help
-```
-
-### `tkeep ls`
-
-```text
-Usage: tkeep ls
-
-Aliases:
-  l
-```
-
-Examples:
-
-```bash
-# List all active sessions
-tkeep ls
-
-# Alias form
-tkeep l
-```
-
-Example output:
+List active sessions with their uptime, computed from the session's runtime file.
 
 ```text
 Active sessions:
-- build
-- work
+- build (uptime: 01h 23m 45s)
+- work  (uptime: 2d 04h 10m 02s)
 ```
 
-If there are no active sessions:
+Prints `No active sessions found.` when nothing is running.
+
+### `tkeep where` (alias `w`)
+
+Report whether the current shell is running inside a tkeep session. Always exits `0`.
 
 ```text
-No active sessions found.
+$ tkeep where
+You are inside tkeep session: work
+```
+
+### `tkeep kill <NAME>` (alias `k`)
+
+Terminate a session. Sends `SIGTERM` by default; pass `-f`/`--force` for `SIGKILL`.
+
+```bash
+tkeep kill work
+tkeep kill stuck-session -f
 ```
 
 ## Runtime Files
 
-`tkeep` stores per-session runtime files (such as `.sock`, `.pid`, `.out`, `.err`) in a versioned runtime directory.
-
-On Linux, it prefers the system runtime directory and falls back to your home directory when needed.
-
-## Environment Variables
-
-`tkeep` recognizes these environment variables for config/data path override:
-
-- `TKEEP_CONFIG`
-- `TKEEP_DATA`
-
-You can also run `tkeep --version` to view detected config and data directories.
-
-## Typical Workflow
-
-```bash
-# Start a session
-tkeep new build
-
-# Detach: just close terminal/SSH
-
-# Re-attach later
-tkeep attach build
-```
+Per-session files (`.sock`, `.pid`, `.out`, `.err`) live under a versioned runtime directory — the system runtime directory on Linux, falling back to `$HOME`. Overrides: `TKEEP_CONFIG`, `TKEEP_DATA`. Run `tkeep --version` to see the resolved paths.
 
 ## License
 
