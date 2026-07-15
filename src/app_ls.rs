@@ -1,6 +1,14 @@
 use color_eyre::Result;
 use color_eyre::eyre::eyre;
+use std::time::{Duration, SystemTime};
 use std::{fs::TryLockError, path::PathBuf};
+
+#[derive(Debug, Clone)]
+pub struct SessionInfo {
+    pub name: String,
+    pub uptime: Duration,
+}
+
 fn is_file_locked(path: &PathBuf) -> Result<bool> {
     let file = std::fs::OpenOptions::new().read(true).open(path)?;
     match file.try_lock() {
@@ -27,14 +35,28 @@ fn get_all_pid_files(base_path: &PathBuf) -> Result<Vec<PathBuf>> {
     Ok(pid_files)
 }
 
-pub fn get_all_sessions(base_path: &PathBuf) -> Result<Vec<String>> {
+fn get_session_uptime(path: &PathBuf) -> Result<Duration> {
+    let metadata = std::fs::metadata(path)?;
+    let start_time = metadata
+        .created()
+        .or_else(|_| metadata.modified())
+        .map_err(|e| eyre!("Failed to get session start time from {:?}: {}", path, e))?;
+    SystemTime::now()
+        .duration_since(start_time)
+        .map_err(|e| eyre!("Failed to compute session uptime for {:?}: {}", path, e))
+}
+
+pub fn get_all_sessions(base_path: &PathBuf) -> Result<Vec<SessionInfo>> {
     let sessions = get_all_pid_files(base_path)?
         .into_iter()
         .filter_map(|path| match is_file_locked(&path) {
-            Ok(true) => Some(Ok(path.file_stem()?.to_str()?.to_string())),
+            Ok(true) => {
+                let name = path.file_stem()?.to_str()?.to_string();
+                Some(get_session_uptime(&path).map(|uptime| SessionInfo { name, uptime }))
+            }
             Ok(false) => None,
             Err(e) => Some(Err(e)),
         })
-        .collect::<Result<Vec<String>>>()?;
+        .collect::<Result<Vec<SessionInfo>>>()?;
     Ok(sessions)
 }
