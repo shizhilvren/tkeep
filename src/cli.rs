@@ -37,6 +37,10 @@ pub enum CliSubCommand {
     /// List all terminal sessions
     #[command(visible_alias = "l")]
     Ls,
+
+    /// Show whether the current shell is running inside a tkeep session
+    #[command(visible_alias = "w")]
+    Where,
 }
 
 fn get_shell() -> String {

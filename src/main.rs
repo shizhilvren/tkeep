@@ -33,6 +33,9 @@ fn main() -> Result<()> {
         cli::CliSubCommand::Ls => {
             ls_sesssions()?;
         }
+        cli::CliSubCommand::Where => {
+            where_session()?;
+        }
     }
     Ok(())
 }
@@ -140,6 +143,18 @@ fn ls_sesssions() -> Result<()> {
         println!("Active sessions:");
         for session in sessions {
             println!("- {} (uptime: {})", session.name, format_duration(session.uptime));
+        }
+    }
+    Ok(())
+}
+
+fn where_session() -> Result<()> {
+    match env::var(tool::TKEEP_SERVER_PTY_NAME) {
+        Ok(name) if !name.is_empty() => {
+            println!("You are inside tkeep session: {}", name);
+        }
+        _ => {
+            println!("You are not inside a tkeep session.");
         }
     }
     Ok(())
