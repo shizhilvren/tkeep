@@ -3,6 +3,7 @@ pub mod app_client;
 pub mod app_ls;
 pub mod app_server;
 pub mod cli;
+pub mod commands;
 pub mod components;
 pub mod config;
 pub mod errors;
